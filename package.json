@@ -19,6 +19,7 @@
     "test:reports": "node scripts/test-reports-and-streaks.mjs",
     "test:award": "node scripts/test-quick-award.mjs",
     "test:push": "node scripts/test-push.mjs",
+    "test:suggested": "node scripts/test-suggested-tasks.mjs",
     "test:all": "node scripts/test-all.mjs",
     "test:e2e": "node scripts/test-e2e.mjs"
   },

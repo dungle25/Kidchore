@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { deleteTask, saveTask } from "@/app/actions/task-actions";
 import { EmptyState } from "@/components/ui";
 import type { ParentChild, ParentTask, Recurrence } from "@/lib/domain";
+import SuggestedTasks from "./suggested-tasks";
 
 const RECURRENCE_LABELS: Record<Recurrence, string> = {
   DAILY: "Hằng ngày",
@@ -119,6 +120,16 @@ export default function TaskManager({
 
   return (
     <div className="space-y-4">
+      <SuggestedTasks
+        existingTitles={rows.map((row) => row.title)}
+        onAdded={(created) => {
+          // The rows the server created, with their real ids, so the list is correct
+          // immediately instead of after a manual reload.
+          setRows((current) => [...created, ...current]);
+          setFeedback({ text: `Đã thêm ${created.length} việc từ danh sách gợi ý.`, ok: true });
+        }}
+      />
+
       <div className="flex justify-end">
         <button
           type="button"

@@ -3,8 +3,14 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { callRpc, requireAuth, requireRole } from "@/lib/dal";
-import { describeDbError, type ParentOverview, type Recurrence } from "@/lib/domain";
+import {
+  describeDbError,
+  type ParentOverview,
+  type ParentTask,
+  type Recurrence,
+} from "@/lib/domain";
 import { notifyEvent } from "@/lib/push";
+import { planQuickAdd } from "@/lib/suggested-tasks";
 import { createAdminClient } from "@/lib/supabase-server";
 
 export interface ActionResult {
@@ -216,6 +222,89 @@ export async function deleteTask(taskId: string): Promise<ActionResult> {
     return { ok: true };
   } catch (error) {
     return toResult(error);
+  }
+}
+
+/** What one bulk add did, so the screen can say exactly that. */
+export type AddSuggestedResult =
+  | {
+      ok: true;
+      /** The rows that were created, ready to show without a reload. */
+      created: ParentTask[];
+      /** Chores that already existed and were left alone. */
+      skipped: string[];
+      failed: { title: string; error: string }[];
+    }
+  | { ok: false; error: string };
+
+/**
+ * Adds several chore definitions at once, from the quick-add catalogue.
+ *
+ * Goes through `create_task` one item at a time rather than a new bulk database
+ * function. A bulk function would save a dozen round trips, but it would also need its
+ * own validation, its own grants and its own tests, and it would have to stay exactly
+ * in step with `create_task` on every field. For fourteen rows typed by hand, the round
+ * trips are not the problem worth solving.
+ *
+ * A chore whose title already exists is skipped rather than added twice. The likely
+ * mistake here is tapping the button twice, and two identical "Đánh răng" rows would
+ * then generate two instances every day, for good.
+ *
+ * Partial success is reported as success with details: three chores added out of
+ * fourteen is a real outcome, and failing the whole call would throw the three away.
+ */
+export async function addSuggestedTasks(
+  items: { title: string; pointsReward: number; requireProofImage: boolean }[]
+): Promise<AddSuggestedResult> {
+  try {
+    const ctx = await requireRole("PARENT");
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return { ok: false, error: "Chưa chọn việc nào." };
+    }
+    if (items.length > 40) {
+      return { ok: false, error: "Mỗi lần chỉ thêm tối đa 40 việc." };
+    }
+
+    // Existing titles come from the database, not from the browser, so two parents
+    // adding chores at the same moment cannot both slip a duplicate through. The rules
+    // for what to skip live in `planQuickAdd` so they can be tested without a browser.
+    const overview = await callRpc<ParentOverview>(ctx.db, "parent_overview");
+    const plan = planQuickAdd(
+      items,
+      (overview?.tasks ?? []).map((task) => task.title)
+    );
+
+    const created: ParentTask[] = [];
+    const failed: { title: string; error: string }[] = plan.invalid.map((item) => ({
+      title: item.title,
+      error: item.reason,
+    }));
+
+    for (const item of plan.toCreate) {
+      try {
+        const row = await callRpc<Omit<ParentTask, "assigned_to_name">>(ctx.db, "create_task", {
+          p_title: item.title,
+          p_description: null,
+          p_points_reward: item.pointsReward,
+          p_recurrence: "DAILY",
+          p_require_proof_image: item.requireProofImage,
+          // Left unassigned: a chore from the catalogue belongs to the household, and
+          // `generate_task_instances` expands it to every child.
+          p_assigned_to_user_id: null,
+          p_category_id: null,
+        });
+        created.push({ ...row, assigned_to_name: null });
+      } catch (error) {
+        failed.push({ title: item.title, error: describeDbError(error) });
+      }
+    }
+
+    revalidatePath("/parent/tasks");
+    revalidatePath("/parent/dashboard");
+    return { ok: true, created, skipped: plan.skipped, failed };
+  } catch (error) {
+    return { ok: false, error: describeDbError(error) };
   }
 }
 
