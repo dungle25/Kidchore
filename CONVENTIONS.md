@@ -361,6 +361,27 @@ hàm, vì Postgres lưu thân plpgsql nguyên văn nên so được chính xác,
 Lần gần nhất script báo **41/41 hàm khớp** trong khi ledger vẫn kêu `CHANGED` — nghĩa là
 file bị sửa comment sau khi chạy, không phải database lệch.
 
+### 6.12. PR có xung đột thì CI không chạy, và không có gì báo
+
+**Đã xảy ra:** mở PR sau khi `main` đã nhận hai PR khác. Trang PR hiện "This branch has
+conflicts that must be resolved", nhưng **không có check nào chạy** — không phải đỏ, mà là
+không xuất hiện. GitHub chỉ tạo ref `refs/pull/N/merge` khi hợp nhất được, và workflow
+`on: pull_request` chạy trên chính ref đó. Không hợp nhất được → không có ref → không có
+workflow.
+
+Triệu chứng này rất dễ đọc sai thành "CI chưa chạy xong". Nếu ngồi chờ thì chờ mãi.
+
+**Quy tắc:** mở PR xong thì xem `mergeable_state` trước khi chờ CI. `dirty` nghĩa là có
+xung đột, sửa trước:
+
+```bash
+node scripts/gh-pr.mjs status --number <N>
+```
+
+Vì branch protection bật "nhánh phải chứa `main` mới nhất", xung đột kiểu này sẽ còn gặp
+lại mỗi khi `main` nhận một PR khác. Cách sửa: `git fetch origin main && git rebase origin/main`,
+rồi `git push --force-with-lease=<nhánh>:<sha cũ>`.
+
 ---
 
 ## 7. Bảo mật khi thêm tính năng
