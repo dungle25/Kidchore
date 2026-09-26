@@ -179,3 +179,43 @@ export async function adjustPoints(input: {
     return toResult(error);
   }
 }
+
+/**
+ * Creates an invite code for a second parent.
+ *
+ * The code comes back in the return value and is **never** available again: the database
+ * stores only its hash, so there is no "show me the code I made yesterday". The screen
+ * says so, and offers to make another one instead.
+ *
+ * Full PARENT rights are what the code grants, which is why it is single-use, expires in
+ * seven days, and can be revoked.
+ */
+export async function createInvite(): Promise<
+  { ok: true; code: string } | { ok: false; error: string }
+> {
+  try {
+    const { db } = await requireRole("PARENT");
+    const code = await callRpc<string>(db, "create_family_invite");
+    revalidatePath("/parent/family");
+    return { ok: true, code: String(code) };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/**
+ * Revokes an invite that has not been used yet.
+ *
+ * The database scopes the update to the caller's own family, so passing somebody else's
+ * invite id is refused rather than silently revoking a stranger's code.
+ */
+export async function revokeInvite(inviteId: string): Promise<ActionResult> {
+  try {
+    const { db } = await requireRole("PARENT");
+    await callRpc(db, "revoke_family_invite", { p_invite_id: inviteId });
+    revalidatePath("/parent/family");
+    return { ok: true };
+  } catch (error) {
+    return toResult(error);
+  }
+}
