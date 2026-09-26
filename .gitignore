@@ -70,3 +70,8 @@ mcp.json
 # Regenerable in one command, and 1.6 MB of PNGs per run would bloat the repository for
 # something that is a working file rather than a deliverable.
 design-screenshots/
+
+# Self-contained HTML exports and the design system copy, produced by
+# scripts/export-static-html.mjs for upload to Google Stitch. Same reasoning: generated,
+# and large. The design system itself is committed at docs/DESIGN.md.
+.stitch/
