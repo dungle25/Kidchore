@@ -15,8 +15,10 @@
     "vercel:env": "node scripts/export-vercel-env.mjs",
     "test:db": "node scripts/test-flows.mjs",
     "test:storage": "node scripts/test-storage-upload.mjs",
-    "test:e2e": "node scripts/test-e2e.mjs",
-    "test:onboarding": "node scripts/test-onboarding.mjs"
+    "test:onboarding": "node scripts/test-onboarding.mjs",
+    "test:reports": "node scripts/test-reports-and-streaks.mjs",
+    "test:award": "node scripts/test-quick-award.mjs",
+    "test:e2e": "node scripts/test-e2e.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
