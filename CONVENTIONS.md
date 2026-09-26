@@ -78,6 +78,31 @@ Mọi thứ khác phục vụ dữ liệu trang cho người đã đăng nhập 
 `anon` — nay dùng `createAnonClient()`. Cấp thừa quyền không gây lỗi ngay, nó chỉ biến một
 thay đổi sau này thành lỗ hổng.
 
+### Thông báo đẩy: ai quyết định người nhận
+
+Việc gửi push **phải** chạy ở Node, vì payload được mã hoá bằng khoá công khai của thiết
+bị và ký bằng khoá riêng VAPID — không làm được trong SQL. Nhưng câu hỏi "ai được phép
+biết chuyện này" là câu hỏi phân quyền, và phân quyền thuộc về database.
+
+Nên trách nhiệm chia đôi:
+
+- `public.push_recipients(p_kind, p_subject_id, p_amount)` tự suy ra người nhận từ
+  `auth.uid()` và từ chính dòng dữ liệu mà sự kiện nói tới, rồi trả về cả nội dung tin
+  nhắn. Không có tham số nào của client trở thành chữ trong thông báo.
+- `lib/push.ts` chỉ mã hoá và gửi những gì được đưa cho.
+
+Đường dễ đi nhưng **sai**: đọc subscription của người khác bằng service role key rồi gửi.
+Cách đó bỏ qua RLS đúng ở chỗ mà RLS là thứ duy nhất đang bảo vệ dữ liệu.
+
+Hai điều dễ quên khi sửa phần này:
+
+- **`await notifyEvent(...)`, đừng thả trôi.** Trên serverless, tiến trình có thể bị đóng
+  băng ngay khi response được gửi đi, nên một promise không `await` là một thông báo
+  không bao giờ tới.
+- **`notifyEvent` không bao giờ throw.** Gửi push là tiện ích thêm vào một việc gia đình
+  đã làm xong; để nó làm hỏng việc đó là biến "dịch vụ push trục trặc" thành "bố không
+  duyệt được việc cho con".
+
 Sửa schema thì **luôn thêm file mới** trong `db/migrations/`, không sửa file đã chạy.
 Migration runner ghi checksum nên file đã apply mà bị sửa sẽ báo `CHANGED since applied`.
 

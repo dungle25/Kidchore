@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { callRpc, requireRole } from "@/lib/dal";
 import { describeDbError } from "@/lib/domain";
+import { notifyEvent } from "@/lib/push";
 
 export interface ActionResult {
   ok: boolean;
@@ -148,7 +149,8 @@ export async function adjustPoints(input: {
   description: string;
 }): Promise<AdjustPointsResult> {
   try {
-    const { db } = await requireRole("PARENT");
+    const ctx = await requireRole("PARENT");
+    const { db } = ctx;
 
     if (!Number.isInteger(input.amount) || input.amount === 0) {
       return { ok: false, error: "Vui lòng nhập số điểm khác 0." };
@@ -162,6 +164,12 @@ export async function adjustPoints(input: {
       p_amount: input.amount,
       p_description: input.description.trim(),
     });
+
+    // Awaited, not fire-and-forget: a serverless function can be frozen the moment the
+    // response is sent, so a floating promise is a notification that never arrives.
+    // `notifyEvent` swallows its own failures, so a push service having a bad day
+    // cannot turn a successful points change into an error for the parent.
+    await notifyEvent(ctx, "POINTS_CHANGED", input.childId, { amount: input.amount });
 
     revalidatePath("/parent/family");
     revalidatePath("/parent/dashboard");

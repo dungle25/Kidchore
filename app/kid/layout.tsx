@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { callRpc, requireChildPage } from "@/lib/dal";
+import { vapidPublicKey } from "@/lib/env";
+import EnableNotifications from "@/components/push/enable-notifications";
 import KidNav, { type Sibling } from "@/components/kid/kid-nav";
 import SessionKeepAlive from "@/components/session-keep-alive";
 import SiblingSwitcher from "@/components/kid/sibling-switcher";
@@ -37,6 +39,7 @@ export default async function KidLayout({ children }: { children: React.ReactNod
       <SessionKeepAlive />
       <div className="mx-auto max-w-3xl px-4 pb-32 pt-6">
         {others.length > 0 && <SiblingSwitcher siblings={others} />}
+        <EnableNotifications vapidPublicKey={vapidPublicKey} />
         <main>{children}</main>
       </div>
       <KidNav name={myName} />

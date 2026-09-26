@@ -3,7 +3,8 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { callRpc, requireAuth, requireRole } from "@/lib/dal";
-import { describeDbError, type Recurrence } from "@/lib/domain";
+import { describeDbError, type ParentOverview, type Recurrence } from "@/lib/domain";
+import { notifyEvent } from "@/lib/push";
 import { createAdminClient } from "@/lib/supabase-server";
 
 export interface ActionResult {
@@ -105,11 +106,12 @@ export async function submitTask(
   proofImageUrl?: string | null
 ): Promise<ActionResult> {
   try {
-    const { db } = await requireRole("CHILD");
-    await callRpc(db, "submit_task_instance", {
+    const ctx = await requireRole("CHILD");
+    await callRpc(ctx.db, "submit_task_instance", {
       p_instance_id: instanceId,
       p_proof_image_url: proofImageUrl ?? null,
     });
+    await notifyEvent(ctx, "TASK_SUBMITTED", instanceId);
     revalidatePath("/kid/dashboard");
     revalidatePath("/kid/tasks");
     revalidatePath("/parent/dashboard");
@@ -123,8 +125,9 @@ export async function submitTask(
 /** Parent approves a submission and awards points exactly once. */
 export async function approveTask(instanceId: string): Promise<ActionResult> {
   try {
-    const { db } = await requireRole("PARENT");
-    await callRpc(db, "approve_task_instance", { p_instance_id: instanceId });
+    const ctx = await requireRole("PARENT");
+    await callRpc(ctx.db, "approve_task_instance", { p_instance_id: instanceId });
+    await notifyEvent(ctx, "TASK_APPROVED", instanceId);
     revalidatePath("/parent/dashboard");
     revalidatePath("/parent/chores");
     revalidatePath("/kid/dashboard");
@@ -139,11 +142,12 @@ export async function rejectTask(
   reason: string
 ): Promise<ActionResult> {
   try {
-    const { db } = await requireRole("PARENT");
-    await callRpc(db, "reject_task_instance", {
+    const ctx = await requireRole("PARENT");
+    await callRpc(ctx.db, "reject_task_instance", {
       p_instance_id: instanceId,
       p_reason: reason,
     });
+    await notifyEvent(ctx, "TASK_REJECTED", instanceId);
     revalidatePath("/parent/dashboard");
     revalidatePath("/parent/chores");
     revalidatePath("/kid/dashboard");
@@ -218,10 +222,28 @@ export async function deleteTask(taskId: string): Promise<ActionResult> {
 /** Generates today's task instances. Idempotent, so it is safe to call often. */
 export async function generateToday(): Promise<ActionResult & { created?: number }> {
   try {
-    const { db } = await requireRole("PARENT");
-    const created = await callRpc<number>(db, "generate_task_instances", {
+    const ctx = await requireRole("PARENT");
+    const created = await callRpc<number>(ctx.db, "generate_task_instances", {
       p_date: new Date().toISOString().slice(0, 10),
     });
+
+    // One notification per child, not per instance: a day's chores are generated in a
+    // single call that can create a dozen rows, and twelve notifications naming one
+    // chore each would be worse than useless. `push_recipients` counts what is actually
+    // waiting and sends nothing at all when the answer is zero.
+    if (Number(created ?? 0) > 0) {
+      try {
+        const overview = await callRpc<ParentOverview>(ctx.db, "parent_overview");
+        for (const child of overview?.children ?? []) {
+          await notifyEvent(ctx, "TASK_ASSIGNED", child.id);
+        }
+      } catch (error) {
+        // The chores exist; only the announcement failed. Say so in the log rather
+        // than reporting a failure for work that did happen.
+        console.error("[push] could not announce today's chores:", error);
+      }
+    }
+
     revalidatePath("/parent/dashboard");
     revalidatePath("/kid/dashboard");
     return { ok: true, created: Number(created ?? 0) };

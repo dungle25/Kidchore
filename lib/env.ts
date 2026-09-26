@@ -109,3 +109,36 @@ export function getServiceRoleKey(): string {
 export function hasAuthSecrets(): boolean {
   return Boolean(process.env.SUPABASE_JWT_SECRET);
 }
+
+/**
+ * The VAPID public key. Inlined into the browser bundle, where it is handed to the
+ * push service when a device subscribes. It is not a secret: it identifies the
+ * sender, and it cannot be used to send anything without the private half.
+ */
+export const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
+
+/**
+ * True when push is configured.
+ *
+ * Every push code path checks this rather than assuming the keys exist, so a
+ * deployment that has not generated them yet simply has no "enable notifications"
+ * button instead of an endpoint that throws.
+ *
+ * Deliberately reads the raw environment rather than the exported keys: this has to
+ * give the right answer in CI, where no VAPID pair exists, without throwing.
+ */
+export function hasPushConfig(): boolean {
+  return Boolean(
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY &&
+      process.env.VAPID_PRIVATE_KEY &&
+      process.env.VAPID_SUBJECT
+  );
+}
+
+/** The VAPID private key and subject. Server only. */
+export function getVapidDetails(): { privateKey: string; subject: string } {
+  return {
+    privateKey: serverOnly("VAPID_PRIVATE_KEY", process.env.VAPID_PRIVATE_KEY),
+    subject: serverOnly("VAPID_SUBJECT", process.env.VAPID_SUBJECT),
+  };
+}
