@@ -64,3 +64,9 @@ vercel-env.txt
 # are installed here. So it is ignored for the same reason .env.local is, rather than
 # because of what happens to be in it today.
 mcp.json
+
+# Screen captures produced by scripts/screenshot-for-design.mjs.
+#
+# Regenerable in one command, and 1.6 MB of PNGs per run would bloat the repository for
+# something that is a working file rather than a deliverable.
+design-screenshots/
