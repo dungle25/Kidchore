@@ -157,7 +157,8 @@ dự án này, cấu hình trông đúng nhưng hành vi sai.
 | `npm run test:storage` | database + Storage | Tải ảnh minh chứng lên bucket |
 | `npm run test:reports` | database | Báo cáo, streak, huy hiệu |
 | `npm run test:award` | database | Thưởng nhanh và phạt nhanh, cả trường hợp phải bị từ chối |
-| `npm run test:e2e` | app đang chạy | 32 kiểm tra HTTP: chặn route, cookie, Server Action |
+| `npm run test:push` | database | Đăng ký thiết bị nhận thông báo, và ai được báo về sự kiện nào |
+| `npm run test:e2e` | app đang chạy | Kiểm tra HTTP: chặn route, cookie, Server Action |
 | `npm run validate:ci` | — | File workflow có hợp lệ và có chạy đúng script không |
 
 Mỗi bộ in ra số kiểm tra ở cuối lần chạy. **Đừng chép số đó vào tài liệu này** — bảng trên
