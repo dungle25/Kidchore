@@ -56,3 +56,11 @@ ci-log-*.txt
 
 # exported env values for deploy (never commit secrets)
 vercel-env.txt
+
+# Local MCP server config for whichever editor is on this machine.
+#
+# This file holds credentials by design - an MCP server that talks to a hosted service
+# needs a token to do it - and it is per-machine anyway, because the tools it points at
+# are installed here. So it is ignored for the same reason .env.local is, rather than
+# because of what happens to be in it today.
+mcp.json
