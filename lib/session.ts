@@ -27,6 +27,33 @@ export interface SessionPayload {
 const ISSUER = "supabase";
 const AUDIENCE = "authenticated";
 
+interface SessionClaims {
+  sub?: string;
+  exp?: number;
+  app_role?: string;
+  app_name?: string;
+}
+
+/**
+ * Decodes the claims part of a token WITHOUT verifying it.
+ *
+ * Only for callers that have already established the signature is good, or that only
+ * need a value they are about to fail closed on anyway. Exported functions verify
+ * first; keeping the decode in one place means the "split into three parts" rule
+ * cannot be got wrong in one place and right in another.
+ */
+function decodeClaims(token: string): SessionClaims | null {
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    return JSON.parse(
+      Buffer.from(parts[1], "base64url").toString("utf8")
+    ) as SessionClaims;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Renew a session once fewer than this many seconds remain. Seven days means a
  * family that opens the app even once a week stays signed in indefinitely, while a
@@ -89,14 +116,8 @@ export function verifySessionToken(
       return null;
     }
 
-    const claims = JSON.parse(
-      Buffer.from(claimsPart, "base64url").toString("utf8")
-    ) as {
-      sub?: string;
-      exp?: number;
-      app_role?: string;
-      app_name?: string;
-    };
+    const claims = decodeClaims(token);
+    if (!claims) return null;
 
     if (!claims.sub || !claims.exp) return null;
     if (claims.exp * 1000 < Date.now()) return null;
@@ -166,14 +187,12 @@ export function clearedSessionCookieHeader(): string {
  * pay for parsing the claims twice.
  */
 export function sessionSecondsRemaining(token: string | undefined): number {
+  if (!token) return -1;
   const payload = verifySessionToken(token);
   if (!payload) return -1;
 
-  const claims = JSON.parse(
-    Buffer.from(token!.split(".")[1], "base64url").toString("utf8")
-  ) as { exp?: number };
-
-  if (!claims.exp) return -1;
+  const claims = decodeClaims(token);
+  if (!claims?.exp) return -1;
   return claims.exp - Math.floor(Date.now() / 1000);
 }
 

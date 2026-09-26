@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { describeDbError, type ChildProfile } from "@/lib/domain";
 import { SESSION_COOKIE, GOOGLE_COOKIE } from "@/lib/auth-constants";
 import { sessionCookieOptions, signSessionToken } from "@/lib/session";
-import { createAdminClient, createUserClient } from "@/lib/supabase-server";
+import { createAdminClient, createAnonClient, createUserClient } from "@/lib/supabase-server";
 
 export interface ActionState {
   error?: string;
@@ -19,8 +19,10 @@ export interface ActionState {
  * behind it returns display data only and never a PIN hash.
  */
 export async function listChildProfiles(): Promise<ChildProfile[]> {
-  const admin = createAdminClient();
-  const { data, error } = await admin.rpc("list_child_profiles");
+  // Anon, not service role: `list_child_profiles` is granted to `anon` precisely
+  // because this screen runs before anyone has signed in, and it returns no PIN hash.
+  const anon = createAnonClient();
+  const { data, error } = await anon.rpc("list_child_profiles");
   if (error) return [];
   return (data ?? []) as ChildProfile[];
 }

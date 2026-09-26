@@ -47,6 +47,10 @@ commitmsg.txt
 commit-msg-*.txt
 *.tmp
 
+# git worktrees, for running two agents on two branches at once.
+# See CONVENTIONS.md section 6.10 for why this exists and what it does NOT protect.
+/.worktrees/
+
 # downloaded CI logs
 ci-log-*.txt
 
