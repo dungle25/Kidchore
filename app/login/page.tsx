@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { listChildProfiles } from "@/app/actions/auth-actions";
+import { getAuthContext } from "@/lib/dal";
 import GoogleLoginButton from "./google-login-button";
 import PinPad from "./pin-login-form";
 
@@ -13,9 +14,14 @@ export const metadata = {
  * Bố/mẹ use Google; các bé use a PIN. The two are visually separated so it is
  * obvious to a child which part is theirs.
  *
- * `?switchTo=<username>` narrows the screen to a single child's keypad, which is how the
- * "Đổi bé" button in the child area works. The PIN is still required, so this is a
- * shortcut rather than a way around authentication.
+ * Two ways to arrive here while already signed in, and both mean "switch profile":
+ * the sibling avatars link to `?switchTo=<username>`, and "Đổi bé" in the child area
+ * links to `/login` with no parameter. So a signed-in child is shown the picker rather
+ * than the parent section - the Google button is not something a child mid-switch
+ * should be offered.
+ *
+ * The PIN is still required either way, so this is a shortcut rather than a way around
+ * authentication. See proxy.ts for why `/login` stays reachable while signed in.
  */
 export default async function LoginPage({
   searchParams,
@@ -33,7 +39,8 @@ export default async function LoginPage({
     profiles = [];
   }
 
-  const switching = Boolean(switchTo);
+  const session = await getAuthContext();
+  const switching = Boolean(switchTo) || session?.session.role === "CHILD";
 
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center bg-slate-100 px-4 py-10">
