@@ -231,14 +231,21 @@ async function get(pathname, token) {
     location: res.headers.get("location"),
     body,
     /**
-     * The same HTML with Next's serialized RSC payload removed.
+     * The same HTML with Next's serialized RSC payload removed, and React's text-node
+     * separators taken out.
      *
      * Next streams the data the page was rendered from into inline <script> tags, so a
      * plain `body.includes(...)` can match text that never appears on screen - and any
      * check that compares *positions* will compare them in the data blob rather than in
      * the document. Use this for anything about what a person actually sees.
+     *
+     * The `<!-- -->` markers matter too: React puts one between adjacent text nodes, so
+     * "1 bài · +5 điểm" in the source arrives as `1<!-- --> bài · +<!-- -->5<!-- --> điểm`
+     * and a naive substring match fails on text a person reads perfectly well.
      */
-    rendered: body.replace(/<script[\s\S]*?<\/script>/g, ""),
+    rendered: body
+      .replace(/<script[\s\S]*?<\/script>/g, "")
+      .replace(/<!--[\s\S]*?-->/g, ""),
     sessionCookie: readSessionCookie(res),
     // Kept for diagnostics: shows exactly what the server asked the browser to store.
     allSetCookies: setCookies,
@@ -646,6 +653,22 @@ try {
     "the approval queue labels the chore as awaiting review",
     parentChores.body.includes("E2E Việc cần ảnh"),
     "task title missing from the queue"
+  );
+  // Grouped by the child who submitted, so a parent approving a queue of submissions does
+  // not have to read the small grey line under every card to know who they are paying.
+  // The heading is found by its attribute: the child's name also appears inside each card,
+  // so a text search would not say which of the two it found.
+  check(
+    "the queue groups submissions under the child who submitted",
+    parentChores.rendered.includes("data-child-heading=") &&
+      parentChores.rendered.indexOf("data-child-heading=") <
+        parentChores.rendered.indexOf("E2E Việc cần ảnh"),
+    "no child heading before the submission"
+  );
+  check(
+    "the heading states how many are waiting and what they are worth",
+    /data-child-heading="[^"]*"[\s\S]{0,200}?1 bài · \+\d+ điểm/.test(parentChores.rendered),
+    "heading does not summarise the group"
   );
 
   // An instance marked as needing proof but holding no photo should be flagged, so a
