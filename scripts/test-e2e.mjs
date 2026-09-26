@@ -32,6 +32,13 @@ const env = Object.fromEntries(
 const secret = env.SUPABASE_JWT_SECRET;
 const SESSION_COOKIE = "kidchore_session";
 
+/**
+ * A proof-image URL shaped exactly like the ones the storage bucket serves. The
+ * upload path is covered by scripts/test-storage-upload.mjs; here it only needs to be a
+ * value that the pages should render.
+ */
+const PROOF_URL = `${env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/proof-images/${encodeURIComponent("__e2e__/proof.jpg")}`;
+
 /** Signs a session token the same way lib/session.ts does. */
 function mintToken(sub, role, name, ttlSeconds = 3600) {
   const now = Math.floor(Date.now() / 1000);
@@ -423,6 +430,59 @@ try {
     "keepalive hands nothing to an anonymous caller",
     anonKeepalive.status === 204 && anonKeepalive.cookie === null,
     `status=${anonKeepalive.status} setCookie=${anonKeepalive.cookie?.raw ?? "none"}`
+  );
+
+  // ---- 8. Proof photos ----
+  // A chore that requires proof shows the child a picker, and the stored image has to
+  // reach the parent's approval screen. The upload path itself is exercised by
+  // scripts/test-storage-upload.mjs; what is checked here is that an instance holding
+  // a proof URL renders on both sides.
+  console.log("\n8. Proof photos");
+
+  const proofTask = await db.query(
+    `insert into public.tasks
+       (family_id, title, description, points_reward, recurrence, assigned_to_user_id, require_proof_image)
+     values ($1, 'E2E Việc cần ảnh', 'Phải gửi ảnh', 13, 'DAILY', $2, true)
+     returning id`,
+    [familyId, childId]
+  );
+  const proofInstance = await db.query(
+    `insert into public.task_instances
+       (task_id, assigned_child_id, due_date, status, proof_image_url)
+     values ($1, $2, current_date, 'SUBMITTED', $3)
+     returning id`,
+    [proofTask.rows[0].id, childId, PROOF_URL]
+  );
+
+  const kidDashWithProof = await get("/kid/dashboard", childToken);
+  check(
+    "the child sees the stored proof photo on their own chore",
+    kidDashWithProof.status === 200 && kidDashWithProof.body.includes(PROOF_URL),
+    `status=${kidDashWithProof.status} urlPresent=${kidDashWithProof.body.includes(PROOF_URL)}`
+  );
+
+  const parentChores = await get("/parent/chores", parentToken);
+  check(
+    "the parent sees the proof photo in the approval queue",
+    parentChores.status === 200 && parentChores.body.includes(PROOF_URL),
+    `status=${parentChores.status} urlPresent=${parentChores.body.includes(PROOF_URL)}`
+  );
+  check(
+    "the approval queue labels the chore as awaiting review",
+    parentChores.body.includes("E2E Việc cần ảnh"),
+    "task title missing from the queue"
+  );
+
+  // An instance marked as needing proof but holding no photo should be flagged, so a
+  // parent does not approve blind.
+  await db.query("update public.task_instances set proof_image_url = null where id = $1", [
+    proofInstance.rows[0].id,
+  ]);
+  const parentChoresNoPhoto = await get("/parent/chores", parentToken);
+  check(
+    "a required-but-missing photo is called out to the parent",
+    parentChoresNoPhoto.body.includes("chưa gửi ảnh"),
+    "missing-photo warning not rendered"
   );
 } finally {
   // Collect linked auth identities BEFORE deleting the families: users.auth_user_id
