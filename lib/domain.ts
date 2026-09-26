@@ -196,6 +196,12 @@ export const DB_ERROR_MESSAGES: Record<string, string> = {
   FAMILY_NAME_REQUIRED: "Vui lòng nhập tên gia đình.",
   POINTS_MUST_BE_POSITIVE: "Số điểm phải lớn hơn 0.",
   AMOUNT_REQUIRED: "Vui lòng nhập số điểm cần điều chỉnh.",
+  // `users.points_balance` carries CHECK (points_balance >= 0), so a deduction past zero
+  // is refused by the database and arrives as this constraint name rather than a domain
+  // code. Without this entry the parent would get the generic "Có lỗi xảy ra" for an
+  // outcome the app can explain: the child simply does not have that many points.
+  users_points_balance_check:
+    "Bé không đủ điểm để trừ như vậy. Số dư có thể vừa thay đổi — vui lòng xem lại số điểm của bé.",
   PIN_MUST_BE_4_TO_8_DIGITS: "Mã PIN phải gồm 4 đến 8 chữ số.",
   TOO_MANY_ATTEMPTS:
     "Bé đã nhập sai quá nhiều lần. Vui lòng thử lại sau 15 phút.",
