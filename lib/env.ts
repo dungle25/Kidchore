@@ -91,8 +91,12 @@ export function getJwtSecret(): string {
 }
 
 /**
- * Service role key. Bypasses RLS entirely, so it must only ever be used for
- * administrative scripts, never to serve a user request.
+ * Service role key. Bypasses RLS entirely.
+ *
+ * Only two callers are allowed, both in lib/supabase-server.ts, and both because no
+ * user identity exists that could authorize the operation: verifying a child's PIN
+ * before a session is issued, and uploading a proof image. Anything serving page data
+ * for a signed-in user must go through that user's own client instead.
  */
 export function getServiceRoleKey(): string {
   return serverOnly(
