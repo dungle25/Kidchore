@@ -18,7 +18,68 @@ import path from "node:path";
 import pg from "pg";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const base = process.argv[2] ?? "http://localhost:3000";
+const args = process.argv.slice(2);
+const startServer = args.includes("--start-server");
+const base = args.find((a) => a.startsWith("http")) ?? "http://localhost:3000";
+
+/**
+ * Runs `next build` then `next start`, and waits until the app answers.
+ *
+ * The HTTP suite needs a running server, and requiring the caller to start one made it
+ * easy to run the suite with nothing listening, which surfaced as a confusing request
+ * failure rather than a clear message. `npm run test:all` uses this so every suite can run
+ * from one command.
+ */
+async function ensureServer() {
+  const { spawn } = await import("node:child_process");
+
+  // Call npx directly rather than going through a shell. Passing arguments to a shell
+  // concatenates them without escaping, which Node warns about, and nothing here needs
+  // shell features.
+  const npx = process.platform === "win32" ? "npx.cmd" : "npx";
+
+  console.log("Building the app for the HTTP suite...");
+  const build = spawn(npx, ["next", "build"], {
+    cwd: root,
+    stdio: "inherit",
+  });
+  const buildCode = await new Promise((resolve) => build.on("exit", resolve));
+  if (buildCode !== 0) {
+    console.error(`Build failed with exit code ${buildCode}.`);
+    process.exit(1);
+  }
+
+  console.log("Starting the server...");
+  const server = spawn(npx, ["next", "start"], {
+    cwd: root,
+    stdio: "inherit",
+  });
+
+  const healthy = await waitForServer();
+  if (!healthy) {
+    server.kill();
+    console.error("The server did not answer in time.");
+    process.exit(1);
+  }
+  console.log("Server is up.\n");
+  return server;
+}
+
+async function waitForServer(timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${base}/login`, { redirect: "manual" });
+      if (res.status > 0) return true;
+    } catch {
+      // Not listening yet.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  return false;
+}
+
+let managedServer = null;
 
 const env = Object.fromEntries(
   readFileSync(path.join(root, ".env.local"), "utf8")
@@ -123,11 +184,19 @@ const AUTH_CHILD = "22222222-2222-4222-8222-222222222222";
 const AUTH_OTHER = "33333333-3333-4333-8333-333333333333";
 
 try {
+  // With --start-server the suite brings the app up itself, which is what the combined
+  // runner uses. Otherwise it expects an app already running and says so plainly.
+  if (startServer) {
+    managedServer = await ensureServer();
+  }
+
   // Reachability first: a clear message beats a confusing ECONNREFUSED later.
   try {
     await fetch(`${base}/login`, { redirect: "manual" });
   } catch {
-    console.error(`\nCannot reach ${base}. Start the app first (npm run dev or npm run build && npm start).`);
+    console.error(
+      `\nCannot reach ${base}. Start the app first (npm run dev, or npm run build && npm start), or pass --start-server.`
+    );
     process.exit(1);
   }
 
@@ -522,6 +591,14 @@ try {
   }
   await db.end();
   console.log("\nE2E fixtures removed.");
+
+  // Stop the server this run started, so nothing keeps the port after the suite ends.
+  // This is inside the single finally block, so it happens on success and on a failure
+  // part-way through alike.
+  if (managedServer) {
+    managedServer.kill();
+    console.log("Stopped the server this run started.");
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

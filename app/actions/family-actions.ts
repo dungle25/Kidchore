@@ -100,6 +100,11 @@ export async function renameChild(
  *
  * Always recorded as a MANUAL_ADJUSTMENT transaction, so the audit trail stays
  * complete even for corrections.
+ *
+ * Returns the balance the database ended up with, so a caller showing the child's
+ * points displays the authoritative number instead of adding the amount locally.
+ * Two parents on two devices can spend the same points, and local arithmetic would
+ * then show a balance the child never had.
  */
 /**
  * Repairs children who have a PIN but no auth identity, so they cannot sign in.
@@ -126,7 +131,7 @@ export async function adjustPoints(input: {
   childId: string;
   amount: number;
   description: string;
-}): Promise<ActionResult> {
+}): Promise<ActionResult & { balance?: number }> {
   try {
     const { db } = await requireRole("PARENT");
 
@@ -137,7 +142,7 @@ export async function adjustPoints(input: {
       return { ok: false, error: "Vui lòng ghi lý do điều chỉnh điểm." };
     }
 
-    await callRpc(db, "adjust_points", {
+    const balance = await callRpc<number>(db, "adjust_points", {
       p_child_id: input.childId,
       p_amount: input.amount,
       p_description: input.description.trim(),
@@ -146,7 +151,7 @@ export async function adjustPoints(input: {
     revalidatePath("/parent/family");
     revalidatePath("/parent/dashboard");
     revalidatePath("/kid/dashboard");
-    return { ok: true };
+    return { ok: true, balance: Number(balance) };
   } catch (error) {
     return toResult(error);
   }

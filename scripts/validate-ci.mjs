@@ -17,6 +17,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const yaml = require("js-yaml");
 
+/** Read the scripts the workflows are allowed to call. */
+const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+
 let pass = 0;
 let fail = 0;
 function check(label, ok, detail = "") {
@@ -112,6 +115,41 @@ for (const file of workflowFiles) {
           `condition: ${condition}`
         );
       }
+    }
+  }
+
+  // Every `npm run <script>` must name a script that exists. A typo here would only
+  // surface when CI actually runs, and it would look like a failing test rather than a
+  // configuration mistake, which is a slow and confusing way to find out.
+  for (const [name, job] of Object.entries(jobs)) {
+    for (const step of job.steps ?? []) {
+      const command = String(step.run ?? "");
+      for (const match of command.matchAll(/npm (?:run )?([a-zA-Z0-9:_-]+)/g)) {
+        const script = match[1];
+        // These are npm commands rather than package scripts.
+        if (["ci", "install", "audit", "exec", "test"].includes(script)) continue;
+        check(
+          `job "${name}" runs an existing script "${script}"`,
+          Boolean(pkg.scripts?.[script]),
+          "not found in package.json scripts"
+        );
+      }
+    }
+  }
+
+  // GitHub forbids a workflow from approving a pull request. A step that tries returns
+  // "GitHub Actions is not permitted to approve pull requests" and the job still reports
+  // success, so the failure is invisible: the approval simply never appears. One such
+  // workflow was written and run here before the restriction was discovered, which is why
+  // this is checked rather than commented.
+  for (const [name, job] of Object.entries(jobs)) {
+    for (const step of job.steps ?? []) {
+      const command = String(step.run ?? "");
+      check(
+        `job "${name}" does not try to approve a pull request`,
+        !/pr\s+review[^\n]*--approve/.test(command),
+        "GitHub Actions cannot approve pull requests; this step will never work"
+      );
     }
   }
 }
