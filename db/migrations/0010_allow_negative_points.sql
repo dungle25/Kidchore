@@ -1,0 +1,16 @@
+-- Cho phép điểm của bé xuống âm ("điểm nợ").
+--
+-- Ràng buộc `CHECK (points_balance >= 0)` khiến database từ chối một khoản trừ lớn hơn số
+-- điểm còn lại. Với gia đình, điều đó có nghĩa là: bé đã hết điểm thì không phạt được nữa.
+-- Quyết định của bố/mẹ bị app âm thầm phủ nhận, và không có chỗ nào ghi lại khoản phạt.
+--
+-- Bỏ ràng buộc để `adjust_points` luôn ghi được khoản trừ. Số dư âm không phải là một lỗi
+-- trạng thái mà là một trạng thái hợp lệ: nó là kết quả của một giao dịch đã nằm trong
+-- point_transactions, và bé trả nợ bằng điểm kiếm được sau đó.
+--
+-- Hệ quả cần biết: mọi chỗ đọc số dư phải chịu được giá trị âm. `request_reward` và
+-- `approve_redemption` so sánh `points_balance < points_required`, nên bé đang nợ vẫn
+-- không đổi được quà — nợ không trở thành quyền tiêu điểm.
+--
+-- Idempotent: chạy lại không lỗi kể cả khi ràng buộc đã bị bỏ.
+alter table public.users drop constraint if exists users_points_balance_check;

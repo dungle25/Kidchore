@@ -7,7 +7,7 @@ import type { ParentChild } from "@/lib/domain";
 /** The amounts offered as one-tap awards, mirrored as one-tap penalties. */
 const AMOUNTS = [1, 3, 5] as const;
 
-/** Used to decide whether the balance limits the penalty row at all. */
+/** Used to decide whether a penalty can push this child below zero. */
 const LARGEST_AMOUNT = AMOUNTS[AMOUNTS.length - 1];
 
 /** Which control was tapped, so only that button shows the pending state. */
@@ -36,16 +36,19 @@ interface Feedback {
  * MANUAL_ADJUSTMENT with a readable reason. A penalty is therefore an auditable act
  * rather than an unexplained drop in the child's balance.
  *
- * `users.points_balance` carries `CHECK (points_balance >= 0)`, so a deduction larger
- * than the balance is refused by the database. The card does not offer a deduction it
- * already knows cannot work: a button above the displayed balance is disabled and struck
- * through, with the reason printed right under the row. Clamping was rejected on purpose
- * — quietly turning a tapped "-5" into "-2" would move the amount decision to the client
- * and write an audit line that does not match what the parent asked for, which is the
- * hole CONVENTIONS.md §1.3 closes. Letting the tap through and refusing afterwards would
- * cost a tap and answer a question the card could already answer. There is no dead end
- * either way: "-1" stays enabled for every balance above zero, so the balance can always
- * be walked down to exactly zero.
+ * A penalty is never refused and never trimmed. Points may go negative, because a child
+ * with nothing left to take is exactly the child a parent most often needs to penalise,
+ * and a punishment is the family's decision rather than something the app gets to
+ * overrule. Migration 0010 dropped `CHECK (points_balance >= 0)` for that reason, so the
+ * deduction is recorded in full and the balance becomes "điểm nợ" the child works off.
+ * Clamping was rejected on purpose: quietly turning a tapped "-5" into "-3" would write
+ * an audit line that does not match what the parent asked for, which is the hole
+ * CONVENTIONS.md §1.3 closes. Refusing the tap was rejected because it leaves the
+ * punishment unrecorded — the worst of both worlds.
+ *
+ * Because the tap always lands, the card owes the parent the consequence before it
+ * happens: the penalty row warns when a deduction would cross zero, the badge turns into
+ * "Nợ N điểm", and the result says how deep the debt now is.
  *
  * No reason is required, to keep "phạt nhanh" quick, and the trade-off is real: the
  * history line says what happened, not why. The fuller form on the Gia đình screen stays
@@ -78,7 +81,7 @@ export default function ChildCard({ child }: { child: ParentChild }) {
     tap: Tap,
     signedAmount: number,
     description: string,
-    successText: string,
+    successText: (newBalance: number) => string,
     undoAmount: number | null = null
   ) {
     setBusy(tap);
@@ -101,8 +104,8 @@ export default function ChildCard({ child }: { child: ParentChild }) {
         return;
       }
 
-      setBalance((current) => response.balance ?? current + signedAmount);
-      setResult({ text: successText, ok: true, undoAmount });
+      setBalance(response.balance);
+      setResult({ text: successText(response.balance), ok: true, undoAmount });
     });
   }
 
@@ -111,7 +114,7 @@ export default function ChildCard({ child }: { child: ParentChild }) {
       { kind: "AWARD", amount },
       amount,
       `Thưởng nhanh +${amount} điểm`,
-      `Đã thưởng ${amount} điểm cho ${child.display_name}.`
+      () => `Đã thưởng ${amount} điểm cho ${child.display_name}.`
     );
   }
 
@@ -120,7 +123,10 @@ export default function ChildCard({ child }: { child: ParentChild }) {
       { kind: "PENALTY", amount },
       -amount,
       `Phạt nhanh -${amount} điểm`,
-      `Đã trừ ${amount} điểm của ${child.display_name}.`,
+      (newBalance) =>
+        newBalance < 0
+          ? `Đã trừ ${amount} điểm của ${child.display_name}. Bé đang nợ ${Math.abs(newBalance)} điểm.`
+          : `Đã trừ ${amount} điểm của ${child.display_name}.`,
       amount
     );
   }
@@ -130,20 +136,32 @@ export default function ChildCard({ child }: { child: ParentChild }) {
       { kind: "UNDO", amount },
       amount,
       `Hoàn tác phạt nhanh +${amount} điểm`,
-      `Đã trả lại ${amount} điểm cho ${child.display_name}.`
+      () => `Đã trả lại ${amount} điểm cho ${child.display_name}.`
     );
   }
 
   const busyAward = busy?.kind === "AWARD" ? busy.amount : null;
   const busyPenalty = busy?.kind === "PENALTY" ? busy.amount : null;
   const undoAmount = result?.undoAmount ?? null;
+  const inDebt = balance < 0;
+
+  /** States what a penalty does to a small or already negative balance, before the tap. */
+  const debtWarning = inDebt
+    ? `Bé đang nợ ${Math.abs(balance)} điểm — phạt thêm sẽ cộng vào khoản nợ.`
+    : balance === 0
+      ? "Bé đang có 0 điểm — phạt sẽ thành điểm nợ (âm điểm)."
+      : `Bé chỉ còn ${balance} điểm — phạt quá ${balance} điểm sẽ thành điểm nợ (âm điểm).`;
 
   return (
     <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between">
         <p className="font-semibold text-slate-800">{child.display_name}</p>
-        <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-800">
-          {balance} điểm
+        <span
+          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+            inDebt ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"
+          }`}
+        >
+          {inDebt ? `Nợ ${Math.abs(balance)} điểm` : `${balance} điểm`}
         </span>
       </div>
 
@@ -188,41 +206,28 @@ export default function ChildCard({ child }: { child: ParentChild }) {
           </div>
         </div>
 
+        {/* Never disabled: the amount is always deductable, even into debt. */}
         <div className="mt-3 flex items-center gap-2 border-t border-red-100 pt-3">
           <span className="text-xs font-semibold text-red-700">Phạt nhanh</span>
           <div className="flex gap-1.5">
-            {AMOUNTS.map((amount) => {
-              // The database refuses a deduction past zero, so an amount the balance
-              // cannot cover is shown as unavailable instead of failing after the tap.
-              const affordable = balance >= amount;
-              return (
-                <button
-                  key={amount}
-                  type="button"
-                  onClick={() => penalise(amount)}
-                  disabled={pending || !affordable}
-                  aria-label={
-                    affordable
-                      ? `Trừ ${amount} điểm của ${child.display_name}`
-                      : `Không trừ được ${amount} điểm vì ${child.display_name} chỉ có ${balance} điểm`
-                  }
-                  className={`min-w-[2.75rem] rounded-lg border border-red-300 bg-red-50 px-2 py-1.5 text-sm font-bold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40 ${
-                    affordable ? "" : "line-through"
-                  }`}
-                >
-                  {busyPenalty === amount ? "…" : `−${amount}`}
-                </button>
-              );
-            })}
+            {AMOUNTS.map((amount) => (
+              <button
+                key={amount}
+                type="button"
+                onClick={() => penalise(amount)}
+                disabled={pending}
+                aria-label={`Trừ ${amount} điểm của ${child.display_name}`}
+                className="min-w-[2.75rem] rounded-lg border border-red-300 bg-red-50 px-2 py-1.5 text-sm font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+              >
+                {busyPenalty === amount ? "…" : `−${amount}`}
+              </button>
+            ))}
           </div>
         </div>
 
+        {/* Shown before a tap that would cross zero, so a debt is never a surprise. */}
         {balance < LARGEST_AMOUNT && (
-          <p className="mt-2 text-xs text-amber-700">
-            {balance === 0
-              ? "Bé đang có 0 điểm nên không trừ được nữa."
-              : `Bé chỉ còn ${balance} điểm nên chỉ trừ được tối đa ${balance} điểm.`}
-          </p>
+          <p className="mt-2 text-xs font-medium text-amber-700">{debtWarning}</p>
         )}
 
         {result && (

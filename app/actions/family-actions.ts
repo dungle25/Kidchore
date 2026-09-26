@@ -9,7 +9,17 @@ export interface ActionResult {
   error?: string;
 }
 
-function toResult(error: unknown): ActionResult {
+/**
+ * Result of a points adjustment.
+ *
+ * Split into two branches so a caller cannot read `balance` without having handled the
+ * failure, and so a call the database refused can never look like it moved the balance.
+ */
+export type AdjustPointsResult =
+  | { ok: true; balance: number }
+  | { ok: false; error: string };
+
+function toResult(error: unknown): { ok: false; error: string } {
   return { ok: false, error: describeDbError(error) };
 }
 
@@ -96,17 +106,6 @@ export async function renameChild(
 }
 
 /**
- * Adds or removes points by hand.
- *
- * Always recorded as a MANUAL_ADJUSTMENT transaction, so the audit trail stays
- * complete even for corrections.
- *
- * Returns the balance the database ended up with, so a caller showing the child's
- * points displays the authoritative number instead of adding the amount locally.
- * Two parents on two devices can spend the same points, and local arithmetic would
- * then show a balance the child never had.
- */
-/**
  * Repairs children who have a PIN but no auth identity, so they cannot sign in.
  *
  * This can only happen for rows created before identities were provisioned
@@ -127,11 +126,27 @@ export async function repairChildIdentities(): Promise<
   }
 }
 
+/**
+ * Adds or removes points by hand.
+ *
+ * Always recorded as a MANUAL_ADJUSTMENT transaction, so the audit trail stays
+ * complete even for corrections.
+ *
+ * A deduction is never clamped to the remaining balance: since migration 0010 the balance
+ * may go negative, so the amount the parent asked for is the amount recorded. This is
+ * what makes "phạt nhanh" honest — the child with nothing left to take is still punished,
+ * and the punishment leaves a trace instead of being silently dropped.
+ *
+ * Returns the balance the database ended up with, so a caller showing the child's points
+ * displays the authoritative number instead of adding the amount locally. Two parents on
+ * two devices can spend the same points, and local arithmetic would then show a balance
+ * the child never had.
+ */
 export async function adjustPoints(input: {
   childId: string;
   amount: number;
   description: string;
-}): Promise<ActionResult & { balance?: number }> {
+}): Promise<AdjustPointsResult> {
   try {
     const { db } = await requireRole("PARENT");
 
