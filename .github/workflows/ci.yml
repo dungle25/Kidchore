@@ -63,10 +63,13 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      # Catches a broken workflow definition in the pull request that breaks it, rather
-      # than after it lands on the main branch.
-      - name: Validate CI configuration
-        run: npm run validate:ci
+      # The unit suites need no secrets, so they belong here rather than in the
+      # integration job. This runs the CI configuration check (which catches a broken
+      # workflow definition in the pull request that breaks it, rather than after it
+      # lands on the main branch) plus the pure-logic suites. `--no-db` makes the
+      # runner stop after those instead of reaching for .env.local.
+      - name: Unit suites
+        run: npm run test:all -- --no-db
 
       - name: Build
         run: npm run build
