@@ -308,6 +308,59 @@ trong `lib/session.ts`.
 `npx eslint --print-config <file>` chứ không đọc tài liệu. Và một bộ test chỉ chạy khi có
 người nhớ ra thì không phải là bộ test — nó phải nằm trong CI.
 
+### 6.10. Hai agent cùng làm trong một thư mục là không an toàn
+
+**Đã xảy ra:** hai phiên làm việc song song trong cùng thư mục này, mỗi phiên một nhánh.
+Một phiên chạy `git stash push -u` để chuyển nhánh — lệnh đó quét sạch **toàn bộ** việc
+chưa commit của phiên kia, gồm 8 file và một migration untracked. May là khôi phục được
+nguyên byte từ chính stash đó.
+
+**Vì sao nhánh không giúp gì:** một repo chỉ có **một** thư mục làm việc và **một** index.
+Nhánh chỉ là con trỏ tới commit. `git checkout` đổi nội dung file ngay tại chỗ, nên hai
+phiên ở hai nhánh vẫn giẫm lên nhau: `git status` không phân biệt được file của ai,
+`git add -A` nuốt hết, và `stash`/`restore` của phiên này xoá việc của phiên kia.
+
+**Quy tắc:**
+
+- **Mặc định một agent một lúc** cho mọi việc có ghi file hoặc ghi database. Rẻ nhất và an
+  toàn nhất.
+- Song song chỉ cho việc **chỉ đọc** — nghiên cứu, đọc code, phân tích. Subagent cũng dùng
+  chung thư mục làm việc, nên luật này áp dụng y nguyên cho chúng.
+- Nếu thật sự cần hai luồng ghi thì dùng `git worktree`, mỗi worktree một thư mục riêng:
+
+```bash
+git worktree add .worktrees/web-push -b feat/web-push-notifications
+```
+
+  Mỗi worktree cần `npm ci` riêng, copy `.env.local` riêng, `.next/` riêng —
+  `node_modules` và biến môi trường **không** được chia sẻ. `.worktrees/` đã có trong
+  `.gitignore`. Worktree phải nằm **trong** thư mục dự án, vì sandbox chỉ cho ghi ở đó.
+
+- **Điều worktree không cứu được: database.** Hai worktree vẫn trỏ vào cùng một project
+  Supabase — project thật của gia đình. Hai phiên chạy test cùng lúc sẽ giẫm lên fixture
+  của nhau, và `cleanup-fixtures.mjs --apply` của phiên này xoá row của phiên kia. Đây
+  đúng là cơ chế đã từng xoá mất liên kết đăng nhập của một bé thật (mục 6.1). Muốn chạy
+  song song thật thì phải có **project Supabase thứ hai, dùng để vứt đi**, làm nơi chạy test.
+
+### 6.11. Checksum migration phụ thuộc cả file lẫn lịch sử
+
+`npm run db:migrate` băm nội dung file và báo `CHANGED since applied!` khi khác. Cảnh báo
+đó nói **file đã đổi**, không nói database đã lệch — hai chuyện khác nhau, và đoán sai sẽ
+tốn nhiều thời gian.
+
+Kiểm tra thẳng cái cần kiểm:
+
+```bash
+node scripts/check-schema-drift.mjs
+```
+
+Script so **thân từng function** trong database với nội dung file migration. Chỉ so thân
+hàm, vì Postgres lưu thân plpgsql nguyên văn nên so được chính xác, còn phần header mà
+`pg_get_functiondef` dựng lại thì không (nó viết `integer` ở chỗ file viết `int`).
+
+Lần gần nhất script báo **41/41 hàm khớp** trong khi ledger vẫn kêu `CHANGED` — nghĩa là
+file bị sửa comment sau khi chạy, không phải database lệch.
+
 ---
 
 ## 7. Bảo mật khi thêm tính năng
