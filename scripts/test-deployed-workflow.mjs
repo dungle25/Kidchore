@@ -121,7 +121,7 @@ try {
      values ($1, 'PARENT', 'Prod Phụ Huynh', 'prod.e2e.parent@example.com', $2) returning id`,
     [fam.rows[0].id, AUTH_PARENT]
   );
-  const parentId = parent.rows[0].id;
+  check("the test parent profile was created", Boolean(parent.rows[0]?.id));
 
   const child = await db.query(
     `insert into public.users (family_id, role, display_name, username, auth_user_id, pin_code)
