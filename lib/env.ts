@@ -16,11 +16,52 @@ function required(name: string, value: string | undefined): string {
   return value;
 }
 
+/**
+ * Normalises the Supabase project URL.
+ *
+ * The value must be the bare project URL. Supabase's dashboard also shows a REST
+ * endpoint ending in `/rest/v1/`, and pasting that instead is an easy mistake: the
+ * values look nearly identical and both are labelled as URLs.
+ *
+ * The failure it causes is very hard to read. `auth-js` appends `/auth/v1/authorize` to
+ * whatever it is given, so a value ending in `/rest/v1/` sends the browser to
+ * `/rest/v1/auth/v1/authorize`. That path belongs to PostgREST, which answers
+ * `{"message":"No API key found in request"}`, so the error points at the API key rather
+ * than at the URL and sends you looking in the wrong place entirely.
+ *
+ * Stripping the path here turns that silent, misleading failure into either a correct
+ * request or an explicit error at startup.
+ */
+function normaliseSupabaseUrl(raw: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(
+      `NEXT_PUBLIC_SUPABASE_URL is not a valid absolute URL: ${JSON.stringify(raw)}`
+    );
+  }
+
+  const hadPath = parsed.pathname !== "/" && parsed.pathname !== "";
+
+  if (hadPath) {
+    // Warn loudly rather than failing: the project URL is still recoverable, and a hard
+    // failure would break a deployment that could otherwise work.
+    console.warn(
+      `[env] NEXT_PUBLIC_SUPABASE_URL has a path ("${parsed.pathname}") that is being ignored. ` +
+        `It should be only the project URL, for example https://<ref>.supabase.co. ` +
+        `A value ending in /rest/v1/ breaks sign-in with a confusing "No API key found" error.`
+    );
+  }
+
+  // Drop any path, query and trailing slash, keeping scheme and host.
+  return `${parsed.protocol}//${parsed.host}`;
+}
+
 /** Safe on the client: these are public by design. */
 export const publicEnv = {
-  supabaseUrl: required(
-    "NEXT_PUBLIC_SUPABASE_URL",
-    process.env.NEXT_PUBLIC_SUPABASE_URL
+  supabaseUrl: normaliseSupabaseUrl(
+    required("NEXT_PUBLIC_SUPABASE_URL", process.env.NEXT_PUBLIC_SUPABASE_URL)
   ),
   supabaseKey: required(
     "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
