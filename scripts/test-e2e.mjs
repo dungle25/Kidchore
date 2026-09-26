@@ -1,0 +1,353 @@
+/**
+ * End-to-end HTTP test against a running server.
+ *
+ * Closes the gap the database tests cannot: that a session cookie issued by
+ * lib/session.ts is accepted by proxy.ts, resolved by lib/dal.ts, authorized by the
+ * database functions, and rendered into a page containing that user's real data.
+ *
+ * Creates its own family in the database, signs a token exactly the way the app
+ * does, drives the running server over HTTP, then removes everything it created.
+ *
+ * Usage (with the app running):
+ *   node scripts/test-e2e.mjs [baseUrl]
+ */
+import { readFileSync } from "node:fs";
+import { createHmac } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import pg from "pg";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const base = process.argv[2] ?? "http://localhost:3000";
+
+const env = Object.fromEntries(
+  readFileSync(path.join(root, ".env.local"), "utf8")
+    .split(/\r?\n/)
+    .filter((l) => l.includes("=") && !l.trim().startsWith("#"))
+    .map((l) => {
+      const i = l.indexOf("=");
+      return [l.slice(0, i).trim(), l.slice(i + 1).trim()];
+    })
+);
+const secret = env.SUPABASE_JWT_SECRET;
+const SESSION_COOKIE = "kidchore_session";
+
+/** Signs a session token the same way lib/session.ts does. */
+function mintToken(sub, role, name) {
+  const now = Math.floor(Date.now() / 1000);
+  const b64 = (o) => Buffer.from(JSON.stringify(o), "utf8").toString("base64url");
+  const input = `${b64({ alg: "HS256", typ: "JWT" })}.${b64({
+    iss: "supabase",
+    sub,
+    role: "authenticated",
+    aud: "authenticated",
+    iat: now,
+    exp: now + 3600,
+    app_role: role,
+    app_name: name,
+  })}`;
+  const sig = createHmac("sha256", secret).update(input).digest("base64url");
+  return `${input}.${sig}`;
+}
+
+let pass = 0;
+let fail = 0;
+function check(label, ok, detail = "") {
+  if (ok) {
+    pass += 1;
+    console.log(`  PASS  ${label}`);
+  } else {
+    fail += 1;
+    console.log(`  FAIL  ${label}${detail ? ` :: ${detail}` : ""}`);
+  }
+}
+
+/**
+ * Fetches a path without following redirects, so a 307 to /login is observable.
+ */
+async function get(pathname, token) {
+  const headers = {};
+  if (token) headers.Cookie = `${SESSION_COOKIE}=${token}`;
+  const res = await fetch(`${base}${pathname}`, { headers, redirect: "manual" });
+  const body = res.status === 200 ? await res.text() : "";
+  return { status: res.status, location: res.headers.get("location"), body };
+}
+
+const db = new pg.Client({
+  connectionString: env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+});
+await db.connect();
+
+let familyId = null;
+/** Every family this run creates, so cleanup is complete even after a failure. */
+const createdFamilyIds = [];
+const AUTH_PARENT = "11111111-1111-4111-8111-111111111111";
+const AUTH_CHILD = "22222222-2222-4222-8222-222222222222";
+const AUTH_OTHER = "33333333-3333-4333-8333-333333333333";
+
+try {
+  // Reachability first: a clear message beats a confusing ECONNREFUSED later.
+  try {
+    await fetch(`${base}/login`, { redirect: "manual" });
+  } catch {
+    console.error(`\nCannot reach ${base}. Start the app first (npm run dev or npm run build && npm start).`);
+    process.exit(1);
+  }
+
+  // Clear residue from any earlier interrupted run before creating anything.
+  await db.query(
+    "delete from public.families where family_name in ('__E2E_FAMILY__', '__E2E_OTHER__')"
+  );
+
+  /**
+   * auth_user_id has a real foreign key to auth.users, so the identities must exist
+   * there. These are inserted the same way migration 0005 provisions a child, which
+   * keeps the test honest about that link instead of bypassing it.
+   */
+  async function createAuthUser(id, email) {
+    await db.query("delete from auth.identities where user_id = $1", [id]);
+    await db.query("delete from auth.users where id = $1", [id]);
+    await db.query(
+      `insert into auth.users (
+         id, instance_id, aud, role, email,
+         encrypted_password, email_confirmed_at,
+         raw_app_meta_data, raw_user_meta_data,
+         created_at, updated_at,
+         confirmation_token, recovery_token, email_change_token_new, email_change
+       ) values (
+         $1, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', $2::varchar,
+         extensions.crypt(gen_random_uuid()::text, extensions.gen_salt('bf', 10)), now(),
+         jsonb_build_object('provider','email','providers',jsonb_build_array('email')),
+         '{}'::jsonb, now(), now(), '', '', '', ''
+       )`,
+      [id, email]
+    );
+    await db.query(
+      `insert into auth.identities (
+         id, user_id, provider_id, identity_data, provider,
+         last_sign_in_at, created_at, updated_at
+       ) values (
+         gen_random_uuid(), $1::uuid, $1::text,
+         jsonb_build_object('sub', $1::text, 'email', $2::text, 'email_verified', true),
+         'email', now(), now(), now()
+       )`,
+      [id, email]
+    );
+  }
+
+  await createAuthUser(AUTH_PARENT, "e2e.parent@example.com");
+  await createAuthUser(AUTH_CHILD, "e2e.child@example.com");
+
+  const fam = await db.query(
+    "insert into public.families (family_name) values ('__E2E_FAMILY__') returning id"
+  );
+  familyId = fam.rows[0].id;
+  createdFamilyIds.push(familyId);
+
+  const parent = await db.query(
+    `insert into public.users (family_id, role, display_name, email, auth_user_id)
+     values ($1, 'PARENT', 'E2E Phụ Huynh', 'e2e.parent@example.com', $2) returning id`,
+    [familyId, AUTH_PARENT]
+  );
+  check("the parent profile was created", Boolean(parent.rows[0]?.id));
+
+  const child = await db.query(
+    `insert into public.users (family_id, role, display_name, username, auth_user_id, pin_code)
+     values ($1, 'CHILD', 'E2E Bé', 'e2ebec', $2, public.hash_pin('1357')) returning id`,
+    [familyId, AUTH_CHILD]
+  );
+  const childId = child.rows[0].id;
+
+  const task = await db.query(
+    `insert into public.tasks (family_id, title, description, points_reward, recurrence, assigned_to_user_id)
+     values ($1, 'E2E Việc đặc biệt', 'Mô tả đặc biệt', 42, 'DAILY', $2) returning id`,
+    [familyId, childId]
+  );
+  await db.query(
+    `insert into public.task_instances (task_id, assigned_child_id, due_date, status)
+     values ($1, $2, current_date, 'PENDING')`,
+    [task.rows[0].id, childId]
+  );
+
+  await db.query(
+    `insert into public.rewards (family_id, title, points_required, stock)
+     values ($1, 'E2E Phần thưởng', 7, -1)`,
+    [familyId]
+  );
+
+  const parentToken = mintToken(AUTH_PARENT, "PARENT", "E2E Phụ Huynh");
+  const childToken = mintToken(AUTH_CHILD, "CHILD", "E2E Bé");
+
+  // ---- 1. Anonymous access is refused ----
+  console.log("\n1. Anonymous access");
+  const anonParent = await get("/parent/dashboard");
+  check(
+    "parent area redirects an anonymous visitor to /login",
+    anonParent.status === 307 && (anonParent.location ?? "").startsWith("/login"),
+    `status=${anonParent.status} location=${anonParent.location}`
+  );
+  const anonKid = await get("/kid/dashboard");
+  check(
+    "kid area redirects an anonymous visitor to /login",
+    anonKid.status === 307 && (anonKid.location ?? "").startsWith("/login"),
+    `status=${anonKid.status} location=${anonKid.location}`
+  );
+
+  // ---- 2. Role separation ----
+  console.log("\n2. Role separation");
+  const parentInKid = await get("/kid/dashboard", parentToken);
+  check(
+    "a parent is redirected out of the kid area",
+    parentInKid.status === 307 && (parentInKid.location ?? "").includes("/parent"),
+    `status=${parentInKid.status} location=${parentInKid.location}`
+  );
+  const childInParent = await get("/parent/dashboard", childToken);
+  check(
+    "a child is redirected out of the parent area",
+    childInParent.status === 307 && (childInParent.location ?? "").includes("/kid"),
+    `status=${childInParent.status} location=${childInParent.location}`
+  );
+
+  // ---- 3. Parent pages render real data through the DAL ----
+  console.log("\n3. Parent pages render this family's data");
+  const parentDash = await get("/parent/dashboard", parentToken);
+  check("parent dashboard returns 200", parentDash.status === 200, `status=${parentDash.status}`);
+  check(
+    "it greets the parent by name",
+    parentDash.body.includes("E2E Phụ Huynh"),
+    "name not found in HTML"
+  );
+  check(
+    "it shows the family name",
+    parentDash.body.includes("__E2E_FAMILY__"),
+    "family name not found in HTML"
+  );
+  check(
+    "it lists the child",
+    parentDash.body.includes("E2E Bé"),
+    "child name not found in HTML"
+  );
+
+  const parentFamily = await get("/parent/family", parentToken);
+  check("family page returns 200", parentFamily.status === 200, `status=${parentFamily.status}`);
+  check(
+    "family page shows the child's username",
+    parentFamily.body.includes("e2ebec"),
+    "username not found in HTML"
+  );
+
+  const parentRewards = await get("/parent/rewards", parentToken);
+  check(
+    "rewards page shows the reward catalogue",
+    parentRewards.status === 200 && parentRewards.body.includes("E2E Phần thưởng"),
+    `status=${parentRewards.status}`
+  );
+
+  const parentTasks = await get("/parent/tasks", parentToken);
+  check(
+    "tasks page shows the chore definition",
+    parentTasks.status === 200 && parentTasks.body.includes("E2E Việc đặc biệt"),
+    `status=${parentTasks.status}`
+  );
+
+  // ---- 4. Child pages render through the DAL ----
+  console.log("\n4. Child pages render this child's data");
+  const kidDash = await get("/kid/dashboard", childToken);
+  check("kid dashboard returns 200", kidDash.status === 200, `status=${kidDash.status}`);
+  check(
+    "it greets the child by name",
+    kidDash.body.includes("E2E Bé"),
+    "child name not found in HTML"
+  );
+  check(
+    "it shows today's chore",
+    kidDash.body.includes("E2E Việc đặc biệt"),
+    "chore title not found in HTML"
+  );
+
+  const kidRewards = await get("/kid/rewards", childToken);
+  check("kid rewards returns 200", kidRewards.status === 200, `status=${kidRewards.status}`);
+  check(
+    "an unlimited-stock reward is offered to the child",
+    kidRewards.body.includes("E2E Phần thưởng"),
+    "unlimited reward missing from the shop"
+  );
+
+  // ---- 5. Forged session is rejected ----
+  console.log("\n5. Forged session");
+  const forged = await get("/parent/dashboard", `${parentToken.slice(0, -6)}abcdef`);
+  check(
+    "a tampered session token does not grant access",
+    forged.status === 307 && (forged.location ?? "").startsWith("/login"),
+    `status=${forged.status} location=${forged.location}`
+  );
+
+  // ---- 6. Data isolation between families ----
+  console.log("\n6. Data isolation");
+  const otherAuth = "33333333-3333-4333-8333-333333333333";
+  await createAuthUser(otherAuth, "e2e.other@example.com");
+
+  const otherFam = await db.query(
+    "insert into public.families (family_name) values ('__E2E_OTHER__') returning id"
+  );
+  createdFamilyIds.push(otherFam.rows[0].id);
+  await db.query(
+    `insert into public.users (family_id, role, display_name, auth_user_id)
+     values ($1, 'PARENT', 'Người Lạ', $2)`,
+    [otherFam.rows[0].id, otherAuth]
+  );
+
+  const otherToken = mintToken(otherAuth, "PARENT", "Người Lạ");
+  const otherView = await get("/parent/dashboard", otherToken);
+  check(
+    "a signed-in user from another family sees none of this family's data",
+    otherView.status === 200 &&
+      !otherView.body.includes("E2E Bé") &&
+      !otherView.body.includes("__E2E_FAMILY__"),
+    `status=${otherView.status} childLeaked=${otherView.body.includes("E2E Bé")}`
+  );
+
+  await db.query("delete from public.families where id = $1", [otherFam.rows[0].id]);
+} finally {
+  // Collect linked auth identities BEFORE deleting the families: users.auth_user_id
+  // is `on delete set null`, so afterwards the link is gone and the auth rows would
+  // be left behind as unreachable orphan accounts.
+  const linked = await db
+    .query(
+      `select auth_user_id from public.users
+       where auth_user_id is not null
+         and (family_id = any($1::uuid[]) or email like '%@example.com' or username like 'e2e%')`,
+      [createdFamilyIds]
+    )
+    .catch(() => ({ rows: [] }));
+
+  // Delete every family this run created, not just the last one. A failure partway
+  // through must not leave fixtures behind.
+  for (const id of createdFamilyIds) {
+    await db.query("delete from public.families where id = $1", [id]).catch(() => {});
+  }
+  // Sweep any residue by name too, in case a family outlived its bookkeeping.
+  await db
+    .query(
+      "delete from public.families where family_name in ('__E2E_FAMILY__', '__E2E_OTHER__')"
+    )
+    .catch(() => {});
+
+  const authIds = new Set([
+    AUTH_PARENT,
+    AUTH_CHILD,
+    AUTH_OTHER,
+    ...linked.rows.map((r) => r.auth_user_id),
+  ]);
+
+  for (const id of authIds) {
+    await db.query("delete from auth.identities where user_id = $1", [id]).catch(() => {});
+    await db.query("delete from auth.users where id = $1", [id]).catch(() => {});
+  }
+  await db.end();
+  console.log("\nE2E fixtures removed.");
+}
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail === 0 ? 0 : 1);
