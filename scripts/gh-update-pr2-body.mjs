@@ -4,7 +4,7 @@
  *
  * Usage: $env:GITHUB_TOKEN='...'; node scripts/gh-update-pr2-body.mjs
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 
 const token = process.env.GITHUB_TOKEN;
 if (!token) {
