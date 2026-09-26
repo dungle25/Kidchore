@@ -1,7 +1,8 @@
 import { callRpc, requireParentPage } from "@/lib/dal";
-import type { ParentOverview } from "@/lib/domain";
+import type { FamilyInvite, ParentOverview } from "@/lib/domain";
 import { ErrorNote } from "@/components/ui";
 import FamilyManager from "./family-manager";
+import InviteParents from "./invite-parents";
 
 export const metadata = { title: "Gia đình — KidChore" };
 
@@ -16,6 +17,15 @@ export default async function ParentFamilyPage() {
     overview = await callRpc<ParentOverview>(db, "parent_overview");
   } catch (cause) {
     error = cause instanceof Error ? cause.message : "Không tải được dữ liệu.";
+  }
+
+  // A failure here must not take the whole page down: the children are the reason
+  // somebody opened this screen, and the invite panel is secondary.
+  let invites: FamilyInvite[] = [];
+  try {
+    invites = await callRpc<FamilyInvite[]>(db, "list_family_invites");
+  } catch {
+    invites = [];
   }
 
   return (
@@ -39,6 +49,7 @@ export default async function ParentFamilyPage() {
             </p>
           </div>
           <FamilyManager kids={overview.children} />
+          <InviteParents invites={invites} />
         </>
       )}
     </div>

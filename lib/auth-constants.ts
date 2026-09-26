@@ -22,3 +22,14 @@ export const SUPABASE_AUTH_STORAGE_KEY = "kidchore-supabase-auth";
 /** Short-lived cookie carrying the Google session through onboarding. */
 export const GOOGLE_COOKIE = "kidchore_google";
 export const GOOGLE_COOKIE_MAX_AGE = 60 * 15;
+
+/**
+ * Carries an invite code across the Google sign-in round trip.
+ *
+ * Somebody who taps an invitation link is not signed in yet, so the code has to survive
+ * a redirect to Google and back. A cookie is the only place for it: the code must not
+ * appear in a URL that ends up in browser history or a server access log, and it must
+ * not be readable by page scripts.
+ */
+export const INVITE_COOKIE = "kidchore_invite";
+export const INVITE_COOKIE_MAX_AGE = 60 * 15;

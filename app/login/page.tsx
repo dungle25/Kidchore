@@ -26,9 +26,9 @@ export const metadata = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; switchTo?: string }>;
+  searchParams: Promise<{ error?: string; switchTo?: string; invite?: string }>;
 }) {
-  const { error, switchTo } = await searchParams;
+  const { error, switchTo, invite } = await searchParams;
 
   // Failures here must not break the page: without profiles the PIN section simply
   // explains that no child exists yet.
@@ -62,6 +62,15 @@ export default async function LoginPage({
             className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
           >
             {error}
+          </p>
+        )}
+
+        {/* Arrived through an invitation link. Said here rather than on a page of its
+            own, because the next step is exactly the Google button below. */}
+        {invite && !switching && (
+          <p className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm text-violet-900">
+            Bạn được mời vào một gia đình trên KidChore. Đăng nhập bằng Google bên dưới
+            để tham gia.
           </p>
         )}
 

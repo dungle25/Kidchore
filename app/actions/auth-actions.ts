@@ -67,6 +67,39 @@ export async function signInWithPin(
 }
 
 /**
+ * Turns an authenticated Google identity into an app session for a parent row.
+ *
+ * Shared by the two ways into the app - creating a household, and joining one somebody
+ * invited you to - because everything after the database call is identical and the one
+ * thing that must not drift is how the session cookie is minted.
+ *
+ * Never returns: `redirect` throws, which is how a Server Action navigates.
+ */
+async function startParentSession(
+  db: ReturnType<typeof createUserClient>,
+  parent: { id: string; display_name: string }
+): Promise<ActionState> {
+  const { data: subject } = await db.rpc("auth_subject_for_user", {
+    p_user_id: parent.id,
+  });
+
+  if (!subject) {
+    return { error: "Không thể hoàn tất thiết lập. Vui lòng thử lại." };
+  }
+
+  const token = signSessionToken({
+    sub: subject as string,
+    role: "PARENT",
+    name: parent.display_name,
+  });
+
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE, token, sessionCookieOptions());
+  cookieStore.delete(GOOGLE_COOKIE);
+  redirect("/parent/dashboard");
+}
+
+/**
  * Creates a family for a signed-in Google user who has no household yet.
  *
  * The database function is idempotent and also adopts an existing parent row with
@@ -97,24 +130,45 @@ export async function completeOnboarding(
 
   if (error) return { error: describeDbError(error) };
 
-  const parent = data as { id: string; display_name: string };
-  const { data: subject } = await db.rpc("auth_subject_for_user", {
-    p_user_id: parent.id,
-  });
+  return startParentSession(db, data as { id: string; display_name: string });
+}
 
-  if (!subject) {
-    return { error: "Không thể hoàn tất thiết lập. Vui lòng thử lại." };
+/**
+ * Joins a family that somebody already in it invited you to.
+ *
+ * The second parent is a full PARENT: the database gives them the same role as the
+ * person who invited them, so there is nothing to configure here beyond choosing a
+ * display name.
+ *
+ * The code is passed through as typed. `accept_family_invite` normalises it and compares
+ * hashes, so a code with dashes, spaces or lower case works, and this action does not
+ * need to agree with the database about what "the same code" means.
+ */
+export async function acceptFamilyInvite(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const code = String(formData.get("inviteCode") ?? "").trim();
+  const displayName = String(formData.get("displayName") ?? "").trim();
+
+  if (!code) return { error: "Vui lòng nhập mã mời." };
+  if (!displayName) return { error: "Vui lòng nhập tên của bạn." };
+
+  const cookieStore = await cookies();
+  const googleToken = cookieStore.get(GOOGLE_COOKIE)?.value;
+  if (!googleToken) {
+    return { error: "Phiên đăng nhập Google đã hết hạn. Vui lòng đăng nhập lại." };
   }
 
-  const token = signSessionToken({
-    sub: subject as string,
-    role: "PARENT",
-    name: parent.display_name,
+  const db = createUserClient(googleToken);
+  const { data, error } = await db.rpc("accept_family_invite", {
+    p_code: code,
+    p_display_name: displayName,
   });
 
-  cookieStore.set(SESSION_COOKIE, token, sessionCookieOptions());
-  cookieStore.delete(GOOGLE_COOKIE);
-  redirect("/parent/dashboard");
+  if (error) return { error: describeDbError(error) };
+
+  return startParentSession(db, data as { id: string; display_name: string });
 }
 
 export async function signOut(): Promise<void> {

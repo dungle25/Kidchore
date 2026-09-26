@@ -39,6 +39,22 @@ export interface KidTask {
   rejection_reason: string | null;
 }
 
+/**
+ * An invite for a second parent.
+ *
+ * There is no `code` field, and there cannot be: the database stores only a sha256 of
+ * it. The plaintext exists for the length of the call that creates it.
+ */
+export interface FamilyInvite {
+  id: string;
+  created_at: string;
+  expires_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  created_by_name: string | null;
+  accepted_by_name: string | null;
+}
+
 export interface KidDashboard {
   child: {
     id: string;
@@ -271,6 +287,15 @@ export const DB_ERROR_MESSAGES: Record<string, string> = {
     "Bé đã nhập sai quá nhiều lần. Vui lòng thử lại sau 15 phút.",
   CHILD_NOT_FOUND: "Không tìm thấy bé này trong gia đình.",
   TASK_NOT_FOUND: "Không tìm thấy việc này.",
+  // One message for wrong, expired, used and revoked alike: the database deliberately
+  // does not say which, because telling a stranger whether a code ever existed is
+  // telling them something they should not know.
+  INVITE_INVALID_OR_EXPIRED:
+    "Mã mời không đúng, đã dùng rồi, hoặc đã hết hạn. Nhờ người mời tạo mã mới giúp bạn.",
+  INVITE_NOT_REVOCABLE: "Mã mời này không thu hồi được nữa.",
+  FAMILY_FULL: "Gia đình này đã đủ số người. Nhờ người trong gia đình kiểm tra lại.",
+  TOO_MANY_ACTIVE_INVITES:
+    "Đang có quá nhiều mã mời chưa dùng. Thu hồi bớt rồi tạo mã mới.",
 };
 
 /** Turns a raw Supabase/Postgres error into a message safe to show a user. */

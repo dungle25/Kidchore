@@ -38,6 +38,11 @@ const unitSuites = [
     script: "scripts/test-suggested-tasks.mjs",
     needsDb: false,
   },
+  {
+    name: "Invite code input",
+    script: "scripts/test-invite-code.mjs",
+    needsDb: false,
+  },
 ];
 
 /** These read and write a real database. */
@@ -65,6 +70,10 @@ const databaseSuites = [
   {
     name: "Push subscriptions and recipients",
     script: "scripts/test-push.mjs",
+  },
+  {
+    name: "Family invites",
+    script: "scripts/test-invites.mjs",
   },
   {
     name: "HTTP end to end",

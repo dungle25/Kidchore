@@ -16,6 +16,8 @@ import { createHmac } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import pg from "pg";
+import { GOOGLE_COOKIE, INVITE_COOKIE, SESSION_COOKIE } from "../lib/auth-constants.ts";
+import { formatInviteCode } from "../lib/invite-code.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -91,7 +93,6 @@ const env = Object.fromEntries(
     })
 );
 const secret = env.SUPABASE_JWT_SECRET;
-const SESSION_COOKIE = "kidchore_session";
 
 /**
  * A proof-image URL shaped exactly like the ones the storage bucket serves. The
@@ -101,7 +102,7 @@ const SESSION_COOKIE = "kidchore_session";
 const PROOF_URL = `${env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/proof-images/${encodeURIComponent("__e2e__/proof.jpg")}`;
 
 /** Signs a session token the same way lib/session.ts does. */
-function mintToken(sub, role, name, ttlSeconds = 3600) {
+function mintToken(sub, role, name, ttlSeconds = 3600, email) {
   const now = Math.floor(Date.now() / 1000);
   const b64 = (o) => Buffer.from(JSON.stringify(o), "utf8").toString("base64url");
   const input = `${b64({ alg: "HS256", typ: "JWT" })}.${b64({
@@ -113,12 +114,77 @@ function mintToken(sub, role, name, ttlSeconds = 3600) {
     exp: now + ttlSeconds,
     app_role: role,
     app_name: name,
+    // Only the Google handshake token carries an email; it is what the invite and
+    // onboarding functions read to record who joined.
+    ...(email ? { email } : {}),
   })}`;
   const sig = createHmac("sha256", secret).update(input).digest("base64url");
   return `${input}.${sig}`;
 }
 
+/** Reads the claims out of a session cookie value, so an identity can be asserted. */
+function tokenClaims(token) {
+  const part = String(token ?? "").split(".")[1];
+  if (!part) return null;
+  try {
+    return JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function unescapeHtml(value) {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+/**
+ * The fields Next.js embeds in a Server Action form for progressive enhancement.
+ *
+ * Replaying them is how a form gets tested the way a browser submits it. Checking the
+ * page around a form only proves the page rendered.
+ */
+function actionFields(html) {
+  const fields = new Map();
+  for (const match of html.matchAll(
+    /<input type="hidden" name="(\$ACTION[^"]*)"(?: value="([^"]*)")?\/?>/g
+  )) {
+    fields.set(match[1], unescapeHtml(match[2] ?? ""));
+  }
+  return fields;
+}
+
 const DAY = 60 * 60 * 24;
+
+/**
+ * Calls a database function as a signed-in user.
+ *
+ * The HTTP suite uses this to set a fixture up through the same functions the app uses,
+ * rather than writing rows directly and testing something the app never does.
+ */
+async function rpcAs(token, fn, args = {}) {
+  const res = await fetch(`${env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: "POST",
+    headers: {
+      apikey: env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(args),
+  });
+  const text = await res.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+  return { status: res.status, data };
+}
 
 /** Reads the session cookie a response asks the browser to store. */
 function readSessionCookie(res) {
@@ -593,6 +659,159 @@ try {
     parentChoresNoPhoto.body.includes("chưa gửi ảnh"),
     "missing-photo warning not rendered"
   );
+
+  // ---- 9. A second parent joining with an invite ----
+  // The point of the feature is that somebody else can get in, so this walks the whole
+  // invitation: the link, the sign-in screen, the onboarding form, and the session that
+  // comes out. Everything up to here would pass with the form wired to nothing.
+  console.log("\n9. Joining a family with an invite");
+
+  const invite = await rpcAs(parentToken, "create_family_invite");
+  const inviteCode = String(invite.data ?? "");
+  check("a parent can create an invite", inviteCode.length === 12, inviteCode);
+
+  // Who the invitation is for: a Google identity with no app account yet.
+  const spouseAuth = "44444444-4444-4444-8444-444444444444";
+  await createAuthUser(spouseAuth, "e2e.spouse@example.com");
+  const spouseGoogle = mintToken(spouseAuth, "PARENT", "E2E Mẹ", 3600, "e2e.spouse@example.com");
+
+  // The link itself. It must park the code in an HttpOnly cookie rather than leave it in
+  // the address bar, and then point at sign-in.
+  const link = await fetch(`${base}/join?code=${formatInviteCode(inviteCode)}`, {
+    redirect: "manual",
+  });
+  const inviteCookieHeader = (link.headers.getSetCookie?.() ?? []).find((cookie) =>
+    cookie.startsWith(`${INVITE_COOKIE}=`)
+  );
+  check(
+    "the invitation link lands on the sign-in screen",
+    link.status === 307 && (link.headers.get("location") ?? "").includes("/login?invite=1"),
+    `status=${link.status} location=${link.headers.get("location") ?? "-"}`
+  );
+  check(
+    "and carries the code in a cookie, not in the URL",
+    Boolean(inviteCookieHeader) && /HttpOnly/i.test(inviteCookieHeader ?? ""),
+    String(inviteCookieHeader ?? "no invite cookie set")
+  );
+
+  const inviteCookie = `${INVITE_COOKIE}=${inviteCookieHeader.split("=")[1].split(";")[0]}`;
+
+  const inviteLogin = await get("/login?invite=1");
+  check(
+    "the sign-in screen explains why they are there",
+    inviteLogin.rendered.includes("Bạn được mời vào một gia đình"),
+    "invitation notice missing"
+  );
+
+  const joinPage = await fetch(`${base}/onboarding`, {
+    headers: { Cookie: `${GOOGLE_COOKIE}=${spouseGoogle}; ${inviteCookie}` },
+    redirect: "manual",
+  });
+  const joinHtml = joinPage.status === 200 ? await joinPage.text() : "";
+  check(
+    "somebody invited can open the onboarding screen",
+    joinPage.status === 200,
+    `status=${joinPage.status}`
+  );
+  check(
+    "it opens on joining rather than creating a family",
+    joinHtml.includes("Bạn được mời vào một gia đình trên KidChore"),
+    "onboarding did not recognise the invitation"
+  );
+  // The form the replay below submits has to be the join one. Without this, a page that
+  // quietly rendered the create form would look like a working invitation.
+  const joinFields = actionFields(joinHtml);
+  check(
+    "the join form carries a Server Action the browser can submit",
+    joinFields.size > 0 && joinHtml.includes(`value="${formatInviteCode(inviteCode)}"`),
+    "join form missing, or the code was not pre-filled"
+  );
+
+  // Replay the form the way a browser submits it.
+  function joinBodyWith(code) {
+    const body = new FormData();
+    for (const [name, value] of joinFields) body.append(name, value);
+    body.append("inviteCode", code);
+    body.append("displayName", "E2E Mẹ");
+    return body;
+  }
+
+  const wrongCode = await fetch(`${base}/onboarding`, {
+    method: "POST",
+    body: joinBodyWith("ZZZZ-ZZZZ-ZZZZ"),
+    redirect: "manual",
+    headers: { Cookie: `${GOOGLE_COOKIE}=${spouseGoogle}; ${inviteCookie}` },
+  });
+  check(
+    "a wrong code gets no session",
+    !readSessionCookie(wrongCode),
+    `status=${wrongCode.status}`
+  );
+
+  const joined = await fetch(`${base}/onboarding`, {
+    method: "POST",
+    body: joinBodyWith(formatInviteCode(inviteCode)),
+    redirect: "manual",
+    headers: { Cookie: `${GOOGLE_COOKIE}=${spouseGoogle}; ${inviteCookie}` },
+  });
+  const joinedHtml = joined.status === 200 ? await joined.text() : "";
+  const spouseSession = readSessionCookie(joined);
+  check(
+    "submitting the code issues a session",
+    Boolean(spouseSession),
+    `status=${joined.status} location=${joined.location ?? "-"} alert=${
+      /role="alert"[^>]*>([^<]{0,200})/.exec(joinedHtml)?.[1] ?? "-"
+    }`
+  );
+  // `readSessionCookie` returns the parsed cookie, not the raw token.
+  const spouseClaims = tokenClaims(spouseSession?.value);
+  check(
+    "and the session belongs to the invited person",
+    spouseClaims?.sub === spouseAuth,
+    `sub=${spouseClaims?.sub ?? "-"}`
+  );
+
+  const spouseRow = (
+    await db.query(
+      "select family_id, role, display_name, email from public.users where auth_user_id = $1",
+      [spouseAuth]
+    )
+  ).rows[0];
+  check(
+    "who is now a parent of this family",
+    spouseRow?.family_id === familyId && spouseRow?.role === "PARENT",
+    JSON.stringify(spouseRow)
+  );
+  check(
+    "with the name they chose, not their Google name",
+    spouseRow?.display_name === "E2E Mẹ",
+    String(spouseRow?.display_name)
+  );
+
+  const spouseDash = await get("/parent/dashboard", spouseSession?.value);
+  check(
+    "and sees the household they were invited into",
+    spouseDash.status === 200 && spouseDash.rendered.includes("__E2E_FAMILY__"),
+    `status=${spouseDash.status}`
+  );
+
+  // The same code must not work twice, or an invitation shared with one person becomes a
+  // way in for anybody who sees the chat message.
+  const secondAuth = "44444444-4444-4444-8444-444444444445";
+  await createAuthUser(secondAuth, "e2e.gatecrasher@example.com");
+  const gatecrasher = await fetch(`${base}/onboarding`, {
+    method: "POST",
+    body: joinBodyWith(inviteCode),
+    redirect: "manual",
+    headers: {
+      Cookie: `${GOOGLE_COOKIE}=${mintToken(secondAuth, "PARENT", "Người Lạ", 3600, "e2e.gatecrasher@example.com")}; ${inviteCookie}`,
+    },
+  });
+  check(
+    "the same code cannot be used a second time",
+    !readSessionCookie(gatecrasher),
+    "a second person got in with a used code"
+  );
 } finally {
   // Collect linked auth identities BEFORE deleting the families: users.auth_user_id
   // is `on delete set null`, so afterwards the link is gone and the auth rows would
@@ -622,6 +841,10 @@ try {
     AUTH_PARENT,
     AUTH_CHILD,
     AUTH_OTHER,
+    // The invited spouse and the gatecrasher: one is linked to a family row that is about
+    // to be deleted, the other never got one at all.
+    "44444444-4444-4444-8444-444444444444",
+    "44444444-4444-4444-8444-444444444445",
     ...linked.rows.map((r) => r.auth_user_id),
   ]);
 
