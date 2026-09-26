@@ -12,6 +12,7 @@
     "validate:ci": "node scripts/validate-ci.mjs",
     "db:migrate": "node scripts/migrate.mjs",
     "db:status": "node scripts/migrate.mjs --status",
+    "vercel:env": "node scripts/export-vercel-env.mjs",
     "test:db": "node scripts/test-flows.mjs",
     "test:storage": "node scripts/test-storage-upload.mjs",
     "test:e2e": "node scripts/test-e2e.mjs",

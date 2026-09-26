@@ -74,7 +74,10 @@ npm run typecheck    # kiểm tra kiểu
 npm run lint         # lint
 npm run db:status    # migration nào đã chạy
 npm run test:db      # 27 kiểm tra luồng nghiệp vụ trên database
-npm run test:e2e     # 19 kiểm tra HTTP (cần app đang chạy)
+npm run test:storage # 10 kiểm tra upload ảnh bằng chứng
+npm run test:onboarding # 13 kiểm tra luồng tạo gia đình
+npm run test:e2e     # 32 kiểm tra HTTP (cần app đang chạy)
+npm run validate:ci  # kiểm tra cấu hình CI
 ```
 
 `test:db` tạo một gia đình tạm rồi chạy qua toàn bộ luồng (nộp bài → duyệt → cộng
@@ -98,18 +101,51 @@ Cả hai bộ test đều tự dọn dữ liệu tạm sau khi chạy.
 
 ## Cấu hình Google login
 
-Việc này chỉ làm được trong Supabase Dashboard:
+Việc này chỉ làm được trong Supabase Dashboard.
 
 1. Google Cloud Console → APIs & Services → Credentials → tạo **OAuth client ID**
    (Web application).
-2. Authorized redirect URI:
-   `https://<project-ref>.supabase.co/auth/v1/callback`
+2. **Authorized redirect URIs** phải chứa **chính xác** dòng này:
+   ```
+   https://<project-ref>.supabase.co/auth/v1/callback
+   ```
+   Sai một ký tự ở đây sẽ làm bước đổi code lấy token thất bại, với thông báo
+   `Unable to exchange external code`.
 3. Supabase Dashboard → Authentication → Providers → **Google** → bật và dán
-   Client ID + Client Secret.
-4. Supabase Dashboard → Authentication → URL Configuration:
-   - Site URL: domain thật của bạn (ví dụ `https://kidchore.vercel.app`)
-   - Redirect URLs: thêm `http://localhost:3000/auth/callback` và
-     `https://<domain>/auth/callback`
+   Client ID + Client Secret của **đúng client đó**.
+4. Supabase Dashboard → Authentication → **URL Configuration**:
+   - **Site URL**: domain thật, ví dụ `https://kidchore-omega.vercel.app`
+   - **Redirect URLs**: thêm **cả hai**
+     ```
+     http://localhost:3000/auth/callback
+     https://<domain>/auth/callback
+     ```
+   - Bấm **Save changes** ở **từng khối**. Hai khối lưu riêng, nên phải bấm hai
+     lần; form nhìn như đã điền vẫn có thể chưa được lưu.
+
+### Vì sao bước 4 bắt buộc, không phải tùy chọn
+
+`redirect_to` mà app gửi lên **phải có trong Redirect URLs**. Nếu không, Supabase
+**thay bằng Site URL** thay vì báo lỗi, nên người dùng bị đưa về sai chỗ và rất khó
+đoán ra nguyên nhân. Xem
+[Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls) và
+[troubleshooting chính thức](https://supabase.com/docs/guides/troubleshooting/why-am-i-being-redirected-to-the-wrong-url-when-using-auth-redirectto-option-_vqIeO).
+
+Để đối chiếu giá trị Supabase gửi cho Google:
+
+```bash
+node scripts/diagnose-google-oauth.mjs
+```
+
+### Một điều không thể kiểm tra qua API
+
+Endpoint `/auth/v1/settings` **không** trả về `site_url` hay `uri_allow_list`, nên
+không có cách nào xác nhận cấu hình bước 4 từ bên ngoài. Việc kiểm tra allow list
+cũng chỉ xảy ra **sau khi Google trả về**, không phải lúc bắt đầu flow — nên một
+request thử với host lạ vẫn "thành công" dù allow list đã bật.
+
+Cách xác minh duy nhất đáng tin: **đăng nhập thật trong cửa sổ ẩn danh**. Nếu vào
+được trang onboarding là cấu hình đã có hiệu lực.
 
 ## Triển khai miễn phí
 
@@ -117,9 +153,22 @@ Việc này chỉ làm được trong Supabase Dashboard:
 
 1. Push repo lên GitHub.
 2. Vercel → New Project → import repo.
-3. Thêm các biến môi trường trong Vercel (giống `.env.local`, nhưng **không** cần
-   `DATABASE_URL` khi chạy).
-4. Deploy, rồi thêm domain của Vercel vào Redirect URLs ở bước cấu hình Google.
+3. Thêm các biến môi trường trong Vercel — đúng 4 biến, **không** cần
+   `DATABASE_URL` khi chạy:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+   - `SUPABASE_JWT_SECRET`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+
+   `npm run vercel:env` ghi ra `vercel-env.txt` (đã gitignore) để copy cho nhanh.
+4. Deploy, rồi thêm domain Vercel vào **Redirect URLs** ở bước 4 phía trên.
+
+Kiểm tra deployment đã nhận biến chưa:
+
+```bash
+node scripts/check-deployment-env.mjs https://<domain>
+node scripts/compare-deployment-credentials.mjs https://<domain>
+```
 
 Lưu ý về gói miễn phí:
 
