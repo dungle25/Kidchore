@@ -25,7 +25,16 @@ export default function GoogleLoginButton() {
         provider: "google",
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
-          queryParams: { access_type: "offline", prompt: "consent" },
+          // No extra Google query parameters are passed on purpose.
+          //
+          // An earlier version sent `access_type=offline` and `prompt=consent` to obtain
+          // a refresh token. Supabase Auth manages provider tokens itself and persists
+          // the session server-side, so the app never needs one, while `prompt=consent`
+          // forced every family member through the Google consent screen on every single
+          // sign-in. Adding provider parameters also gives Google more to reject during
+          // the code exchange, which is a common cause of
+          // "Unable to exchange external code". The default flow is both simpler and
+          // more robust.
         },
       });
 
