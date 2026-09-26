@@ -17,6 +17,7 @@ import { createHmac } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import pg from "pg";
+import { makeIdentityGuard } from "./lib/test-cleanup.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const env = Object.fromEntries(
@@ -91,6 +92,9 @@ const db = new pg.Client({
   ssl: { rejectUnauthorized: false },
 });
 await db.connect();
+
+/** Snapshot taken before anything is created, so cleanup can spare existing identities. */
+const guard = await makeIdentityGuard(db);
 
 let familyId = null;
 let authUserIds = [];
@@ -458,24 +462,32 @@ try {
     await db.query("delete from public.families where id = $1", [familyId]);
   }
 
-  // Auth users created through create_child get a generated @kidchore.local address.
-  const generated = await db.query(
-    "select id from auth.users where email like '%@kidchore.local'"
-  );
+  // Identities this run created. The guard compares against a snapshot taken at startup,
+  // so an identity that already existed is never removed. Selecting every
+  // `@kidchore.local` row instead would also match identities belonging to real children,
+  // because create_child generates exactly that address shape; doing that once locked a
+  // real child out of their account.
+  const removedCreated = await guard.removeCreated();
 
-  const authIds = new Set([
+  // The identities this script created explicitly, plus any linked to the test family.
+  const explicit = new Set([
     ...authUserIds,
     ...linked.rows.map((r) => r.auth_user_id),
-    ...generated.rows.map((r) => r.id),
   ]);
-
-  for (const id of authIds) {
+  let removedExplicit = 0;
+  for (const id of explicit) {
+    if (!id || guard.existedBefore(id)) continue;
+    const res = await db
+      .query("delete from auth.users where id = $1", [id])
+      .catch(() => ({ rowCount: 0 }));
     await db.query("delete from auth.identities where user_id = $1", [id]).catch(() => {});
-    await db.query("delete from auth.users where id = $1", [id]).catch(() => {});
+    removedExplicit += res.rowCount ?? 0;
   }
 
   console.log(
-    `\nTest family and ${authIds.size} auth identit${authIds.size === 1 ? "y" : "ies"} removed.`
+    `\nTest family and ${removedCreated + removedExplicit} auth identit${
+      removedCreated + removedExplicit === 1 ? "y" : "ies"
+    } removed.`
   );
   await db.end();
 }
