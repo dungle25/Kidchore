@@ -49,3 +49,6 @@ commit-msg-*.txt
 
 # downloaded CI logs
 ci-log-*.txt
+
+# exported env values for deploy (never commit secrets)
+vercel-env.txt
