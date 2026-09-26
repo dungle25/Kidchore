@@ -16,6 +16,51 @@ const STATUS_LABEL: Record<KidTask["status"], string> = {
   REJECTED: "Bị trả lại",
 };
 
+/**
+ * Sections, in the order of a child's day.
+ *
+ * A rejected chore sits under "Chưa làm" rather than in a section of its own: from the
+ * child's point of view it is still something to do, and the card itself says it was
+ * sent back and why. A separate section would give the failure its own headline and
+ * push the two sections that matter further down the screen.
+ */
+const TASK_GROUPS: {
+  key: string;
+  label: string;
+  icon: string;
+  match: (task: KidTask) => boolean;
+}[] = [
+  {
+    key: "todo",
+    label: "Chưa làm",
+    icon: "📋",
+    match: (task) => task.status === "PENDING" || task.status === "REJECTED",
+  },
+  {
+    key: "waiting",
+    label: "Chờ bố/mẹ duyệt",
+    icon: "⏳",
+    match: (task) => task.status === "SUBMITTED",
+  },
+  {
+    key: "done",
+    label: "Đã xong",
+    icon: "✅",
+    match: (task) => task.status === "APPROVED",
+  },
+];
+
+/**
+ * One rendered line: either a section heading or a chore.
+ *
+ * Kept flat on purpose. Nesting a map inside a map for three sections would indent the
+ * card markup two levels deeper for no benefit, and the card is the part of this file
+ * that has to stay readable - it is the screen a child uses every day.
+ */
+type Block =
+  | { kind: "header"; group: (typeof TASK_GROUPS)[number]; count: number }
+  | { kind: "task"; task: KidTask };
+
 interface Picked {
   file: File;
   previewUrl: string;
@@ -170,6 +215,16 @@ export default function KidTaskList({ tasks }: { tasks: KidTask[] }) {
     );
   }
 
+  // Headers and cards interleaved into one list, so a group with nothing in it simply
+  // contributes no heading.
+  const blocks: Block[] = [];
+  for (const group of TASK_GROUPS) {
+    const items = rows.filter(group.match);
+    if (items.length === 0) continue;
+    blocks.push({ kind: "header", group, count: items.length });
+    for (const task of items) blocks.push({ kind: "task", task });
+  }
+
   return (
     <div className="space-y-3">
       {feedback && (
@@ -183,7 +238,26 @@ export default function KidTaskList({ tasks }: { tasks: KidTask[] }) {
         </p>
       )}
 
-      {rows.map((task) => {
+      {blocks.map((block) => {
+        if (block.kind === "header") {
+          return (
+            <h2
+              key={`header-${block.group.key}`}
+              // The heading text is the same as a card's status label ("Chưa làm" is both
+              // the group and the state of one chore), so the group is named in the DOM
+              // too. Without this, anything checking the page has to guess which of the
+              // two it just found.
+              data-group={block.group.key}
+              className="flex items-baseline gap-2 pt-3 text-base font-bold text-slate-600"
+            >
+              <span aria-hidden>{block.group.icon}</span>
+              {block.group.label}
+              <span className="text-sm font-semibold text-slate-400">{block.count}</span>
+            </h2>
+          );
+        }
+
+        const task = block.task;
         const done = task.status === "SUBMITTED" || task.status === "APPROVED";
         const chosen = picked[task.id];
 

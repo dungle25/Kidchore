@@ -164,6 +164,15 @@ async function get(pathname, token) {
     status: res.status,
     location: res.headers.get("location"),
     body,
+    /**
+     * The same HTML with Next's serialized RSC payload removed.
+     *
+     * Next streams the data the page was rendered from into inline <script> tags, so a
+     * plain `body.includes(...)` can match text that never appears on screen - and any
+     * check that compares *positions* will compare them in the data blob rather than in
+     * the document. Use this for anything about what a person actually sees.
+     */
+    rendered: body.replace(/<script[\s\S]*?<\/script>/g, ""),
     sessionCookie: readSessionCookie(res),
     // Kept for diagnostics: shows exactly what the server asked the browser to store.
     allSetCookies: setCookies,
@@ -355,6 +364,14 @@ try {
     parentTasks.status === 200 && parentTasks.body.includes("E2E Việc đặc biệt"),
     `status=${parentTasks.status}`
   );
+  // The quick-add catalogue is the first thing a new family uses, so it has to be on the
+  // page. What it does once opened and pressed is covered by
+  // scripts/test-suggested-tasks.mjs, which checks the rules without a browser.
+  check(
+    "the tasks page offers the quick-add catalogue",
+    parentTasks.body.includes("Thêm nhanh việc thường làm"),
+    "quick-add panel missing"
+  );
 
   // ---- 4. Child pages render through the DAL ----
   console.log("\n4. Child pages render this child's data");
@@ -369,6 +386,29 @@ try {
     "it shows today's chore",
     kidDash.body.includes("E2E Việc đặc biệt"),
     "chore title not found in HTML"
+  );
+
+  // The list is grouped by what the child can do next. The heading text is the same as a
+  // card's status label ("Chưa làm" is both), so the group is identified by the
+  // attribute rather than by the words - otherwise this would pass by finding the label
+  // inside the card it was supposed to be filing.
+  check(
+    "an unfinished chore is filed under its group heading",
+    kidDash.rendered.includes('data-group="todo"') &&
+      kidDash.rendered.indexOf('data-group="todo"') <
+        kidDash.rendered.indexOf("E2E Việc đặc biệt"),
+    `heading@${kidDash.rendered.indexOf('data-group="todo"')} chore@${kidDash.rendered.indexOf("E2E Việc đặc biệt")}`
+  );
+  check(
+    "a group with nothing in it is not shown",
+    !kidDash.rendered.includes('data-group="waiting"') &&
+      !kidDash.rendered.includes('data-group="done"'),
+    "an empty group heading is rendered"
+  );
+  check(
+    "the group heading counts the chores in it",
+    /data-group="todo"[^>]*>[\s\S]{0,200}?<span[^>]*>1<\/span>/.test(kidDash.rendered),
+    "no count next to the group heading"
   );
 
   const kidRewards = await get("/kid/rewards", childToken);

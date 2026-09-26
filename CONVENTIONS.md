@@ -158,6 +158,7 @@ dự án này, cấu hình trông đúng nhưng hành vi sai.
 | `npm run test:reports` | database | Báo cáo, streak, huy hiệu |
 | `npm run test:award` | database | Thưởng nhanh và phạt nhanh, cả trường hợp phải bị từ chối |
 | `npm run test:push` | database | Đăng ký thiết bị nhận thông báo, và ai được báo về sự kiện nào |
+| `npm run test:suggested` | — | Danh mục việc gợi ý và luật của thao tác thêm nhanh (trùng tên, điểm không hợp lệ) |
 | `npm run test:e2e` | app đang chạy | Kiểm tra HTTP: chặn route, cookie, Server Action |
 | `npm run validate:ci` | — | File workflow có hợp lệ và có chạy đúng script không |
 
@@ -436,6 +437,27 @@ luồng này là người **đã đăng nhập**. Nó kiểm tra đúng URL, đ�
   đúng sang bé đó.
 - **Triệu chứng "bấm không có gì xảy ra" thường là một redirect về chính trang đang đứng.**
   Kiểm bằng `redirect: "manual"` để thấy mã 307 và `Location`, đừng chỉ `fetch` rồi đọc HTML.
+
+### 6.14. `body.includes(...)` có thể khớp chữ trong payload RSC, không phải trên màn hình
+
+**Đã xảy ra:** thêm kiểm tra "việc chưa làm nằm dưới tiêu đề nhóm của nó" bằng cách so vị
+trí hai chuỗi trong HTML. Nó đỏ, trong khi tiêu đề nhóm **có** trên trang và đứng trước thẻ
+việc. Vị trí in ra cho thấy tên việc ở 22971 còn tiêu đề nhóm ở 24728.
+
+Nguyên nhân: Next stream dữ liệu đã dựng trang vào các thẻ `<script>` **nằm trong body**.
+Tên việc xuất hiện trong cục dữ liệu đó trước khi nó xuất hiện trong HTML thật. Nên
+`indexOf` đang so hai vị trí trong blob dữ liệu, không phải trong tài liệu.
+
+Điều này cũng có nghĩa mọi `body.includes("...")` đều có thể xanh vì chữ nằm trong dữ liệu
+chứ chưa chắc người dùng nhìn thấy.
+
+**Quy tắc:** `get()` trong `test-e2e.mjs` trả thêm `rendered` — HTML đã bỏ `<script>`. Dùng
+`rendered` cho mọi khẳng định về cái người dùng nhìn thấy, và cho mọi so sánh vị trí. Dùng
+`body` khi cần kiểm tra chính dữ liệu được gửi xuống.
+
+Một hệ quả nữa: nếu tiêu đề nhóm và nhãn trạng thái của thẻ trùng chữ (cả hai đều là
+"Chưa làm"), thì đừng nhắm vào chữ. `kid-task-list.tsx` gắn `data-group="todo"` cho tiêu đề
+để kiểm tra không phải đoán nó vừa tìm thấy cái nào.
 
 ---
 

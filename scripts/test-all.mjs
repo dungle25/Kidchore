@@ -33,6 +33,11 @@ const unitSuites = [
     script: "scripts/test-report-days.mjs",
     needsDb: false,
   },
+  {
+    name: "Suggested chores and quick add",
+    script: "scripts/test-suggested-tasks.mjs",
+    needsDb: false,
+  },
 ];
 
 /** These read and write a real database. */
