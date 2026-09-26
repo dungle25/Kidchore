@@ -423,6 +423,31 @@ try {
     parentFamily.body.includes("e2ebec"),
     "username not found in HTML"
   );
+  check(
+    "the family page offers the avatar picker for that child",
+    parentFamily.rendered.includes("Chọn ảnh cho E2E Bé"),
+    "avatar picker missing"
+  );
+
+  // The avatar a parent picks has to reach the sign-in screen: that is the one place a
+  // child sees it before they are signed in, and the whole point of picking one.
+  const avatarSet = await rpcAs(parentToken, "set_child_avatar", {
+    p_child_id: childId,
+    p_avatar: "dino",
+  });
+  check("a parent can set a child's avatar", avatarSet.status < 400, JSON.stringify(avatarSet.data));
+
+  const loginWithAvatar = await get("/login");
+  check(
+    "the sign-in screen shows the chosen avatar",
+    loginWithAvatar.rendered.includes("🦖"),
+    "the picked emoji is not on the sign-in screen"
+  );
+  check(
+    "and the picker now offers to change it rather than to choose one",
+    (await get("/parent/family", parentToken)).rendered.includes("Đổi ảnh cho E2E Bé"),
+    "picker still says 'choose' after an avatar was set"
+  );
 
   const parentRewards = await get("/parent/rewards", parentToken);
   check(

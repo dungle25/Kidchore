@@ -187,6 +187,7 @@ dự án này, cấu hình trông đúng nhưng hành vi sai.
 | `npm run test:suggested` | — | Danh mục việc gợi ý và luật của thao tác thêm nhanh (trùng tên, điểm không hợp lệ) |
 | `npm run test:invite-code` | — | Cách đọc mã mời khi người dùng gõ hoặc dán vào |
 | `npm run test:approvals` | — | Cách gom hàng đợi duyệt bài theo từng bé: thứ tự, tổng điểm, hai bé trùng tên |
+| `npm run test:avatars` | database | Ảnh đại diện của bé: giá trị nào được nhận, ai được đặt, và `create_child` còn nguyên hành vi cũ |
 | `npm run test:invites` | database | Mời bố/mẹ thứ hai: mọi trường hợp phải bị từ chối, và quyền của người được mời |
 | `npm run test:e2e` | app đang chạy | Kiểm tra HTTP: chặn route, cookie, Server Action |
 | `npm run validate:ci` | — | File workflow có hợp lệ và có chạy đúng script không |
