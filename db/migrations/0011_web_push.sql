@@ -338,8 +338,11 @@ begin
       v_url := '/kid/rewards';
     else
       v_title := 'Yêu cầu đổi quà bị từ chối';
-      v_body := coalesce(v_reward.title, 'Phần quà') || ' · -' ||
-                coalesce(v_request.points_spent, 0) || ' điểm đã hoàn lại';
+      -- Deliberately does NOT claim the points were refunded. `request_reward` only
+      -- checks the balance; nothing is deducted until a parent approves, and
+      -- `reject_redemption` never touches the balance. Saying "đã hoàn lại" would tell
+      -- the child they lost points and got them back, which never happened.
+      v_body := coalesce(v_reward.title, 'Phần quà') || ' · chưa đổi được, điểm vẫn còn nguyên';
       v_url := '/kid/rewards';
     end if;
 

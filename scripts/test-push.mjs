@@ -535,6 +535,31 @@ try {
     JSON.stringify(rejectedRedemption.data)
   );
 
+  // `request_reward` only checks the balance and `reject_redemption` never touches it,
+  // so nothing is refunded and the message must not suggest otherwise. An earlier draft
+  // said "đã hoàn lại", which would have told the child they lost points and got them
+  // back when neither had happened.
+  const balanceBefore = (
+    await db.query("select points_balance from public.users where id = $1", [childA])
+  ).rows[0].points_balance;
+  await db.query("update public.redemption_requests set status = 'REJECTED' where id = $1", [
+    redemption,
+  ]);
+  const balanceAfter = (
+    await db.query("select points_balance from public.users where id = $1", [childA])
+  ).rows[0].points_balance;
+  check(
+    "rejecting a reward leaves the balance untouched, as the message claims",
+    balanceBefore === balanceAfter,
+    `${balanceBefore} -> ${balanceAfter}`
+  );
+  check(
+    "and the rejection message does not claim a refund",
+    !String(rejectedRedemptionRows[0]?.body).includes("hoàn lại") &&
+      String(rejectedRedemptionRows[0]?.body).includes("còn nguyên"),
+    String(rejectedRedemptionRows[0]?.body)
+  );
+
   // ---- 5. Today's chores ----
   console.log("\n5. Today's chores announce a count, not a pile of messages");
 
