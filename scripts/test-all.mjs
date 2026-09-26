@@ -58,6 +58,10 @@ const databaseSuites = [
     script: "scripts/test-quick-award.mjs",
   },
   {
+    name: "Push subscriptions and recipients",
+    script: "scripts/test-push.mjs",
+  },
+  {
     name: "HTTP end to end",
     script: "scripts/test-e2e.mjs",
     // The suite builds and starts the app itself, then stops it again, so one command

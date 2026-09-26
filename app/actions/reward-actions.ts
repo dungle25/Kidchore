@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { callRpc, requireRole } from "@/lib/dal";
 import { describeDbError } from "@/lib/domain";
+import { notifyEvent } from "@/lib/push";
 
 export interface ActionResult {
   ok: boolean;
@@ -22,8 +23,14 @@ function toResult(error: unknown): ActionResult {
  */
 export async function requestReward(rewardId: string): Promise<ActionResult> {
   try {
-    const { db } = await requireRole("CHILD");
-    await callRpc(db, "request_reward", { p_reward_id: rewardId });
+    const ctx = await requireRole("CHILD");
+    // `request_reward` returns the row it inserted, and the notification needs that id
+    // as its subject: the database re-reads the request to compose the message, so
+    // nothing about the reward is taken from the client.
+    const request = await callRpc<{ id: string }>(ctx.db, "request_reward", {
+      p_reward_id: rewardId,
+    });
+    await notifyEvent(ctx, "REWARD_REQUESTED", request.id);
     revalidatePath("/kid/rewards");
     revalidatePath("/parent/dashboard");
     revalidatePath("/parent/rewards");
@@ -38,8 +45,9 @@ export async function approveRedemption(
   requestId: string
 ): Promise<ActionResult> {
   try {
-    const { db } = await requireRole("PARENT");
-    await callRpc(db, "approve_redemption", { p_request_id: requestId });
+    const ctx = await requireRole("PARENT");
+    await callRpc(ctx.db, "approve_redemption", { p_request_id: requestId });
+    await notifyEvent(ctx, "REDEMPTION_APPROVED", requestId);
     revalidatePath("/parent/rewards");
     revalidatePath("/parent/dashboard");
     revalidatePath("/kid/dashboard");
@@ -54,11 +62,12 @@ export async function rejectRedemption(
   reason: string
 ): Promise<ActionResult> {
   try {
-    const { db } = await requireRole("PARENT");
-    await callRpc(db, "reject_redemption", {
+    const ctx = await requireRole("PARENT");
+    await callRpc(ctx.db, "reject_redemption", {
       p_request_id: requestId,
       p_reason: reason,
     });
+    await notifyEvent(ctx, "REDEMPTION_REJECTED", requestId);
     revalidatePath("/parent/rewards");
     revalidatePath("/parent/dashboard");
     return { ok: true };

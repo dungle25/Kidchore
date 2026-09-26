@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { requireParentPage, callRpc } from "@/lib/dal";
+import { vapidPublicKey } from "@/lib/env";
 import type { ParentOverview } from "@/lib/domain";
+import EnableNotifications from "@/components/push/enable-notifications";
 import ParentNav from "@/components/parent/parent-nav";
 import SessionKeepAlive from "@/components/session-keep-alive";
 
@@ -35,6 +37,7 @@ export default async function ParentLayout({
       <SessionKeepAlive />
       <ParentNav familyName={familyName} />
       <main className="flex-1 overflow-y-auto px-4 pb-24 pt-5 md:px-8 md:pb-8">
+        <EnableNotifications vapidPublicKey={vapidPublicKey} />
         {children}
       </main>
     </div>
