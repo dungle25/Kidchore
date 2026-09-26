@@ -10,6 +10,7 @@
     "typegen": "next typegen",
     "typecheck": "next typegen && tsc --noEmit",
     "validate:ci": "node scripts/validate-ci.mjs",
+    "check:secrets": "node scripts/check-no-secrets.mjs",
     "db:migrate": "node scripts/migrate.mjs",
     "db:status": "node scripts/migrate.mjs --status",
     "vercel:env": "node scripts/export-vercel-env.mjs",

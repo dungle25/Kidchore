@@ -43,6 +43,13 @@ const unitSuites = [
     script: "scripts/test-invite-code.mjs",
     needsDb: false,
   },
+  {
+    // Runs in the job that has no secrets, which is exactly where a check for
+    // credentials committed by mistake belongs.
+    name: "No committed credentials",
+    script: "scripts/check-no-secrets.mjs",
+    needsDb: false,
+  },
 ];
 
 /** These read and write a real database. */
