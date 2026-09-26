@@ -220,6 +220,28 @@ Ba điều đáng biết trước, vì chúng không phải lỗi:
   16.4–18.3 thông báo sẽ được nhận nhưng không hiện.
 - **Xoá app khỏi Màn hình chính là mất đăng ký.** Mở lại app và bật lại là xong.
 
+## Mời bố/mẹ thứ hai
+
+Mỗi tài khoản Google thuộc về **đúng một** gia đình. Người đầu tiên đăng nhập sẽ tạo gia
+đình; người thứ hai **phải được mời**, nếu không thì đăng nhập bằng Google sẽ tạo ra một
+gia đình mới rỗng — không thấy các bé, không việc, không điểm.
+
+1. Trong app, vào **Gia đình → Mời bố/mẹ khác cùng dùng → Tạo mã mời**.
+2. Gửi **mã** hoặc **link** cho người kia (Zalo, tin nhắn…). Mã gồm 12 chữ và số, có hạn
+   **7 ngày** và chỉ dùng được **một lần**.
+3. Người kia mở link, đăng nhập bằng Google của họ, nhập tên của họ, và vào thẳng.
+
+Người được mời là bố/mẹ **toàn quyền**: duyệt việc, cộng/trừ điểm, sửa việc, quản lý quà —
+và **nhận thông báo** cho mọi việc bé làm, giống hệt người đầu tiên.
+
+Ba điều đáng biết:
+
+- **Mã chỉ hiện một lần.** App chỉ lưu hash của mã, không lưu mã, nên không xem lại được.
+  Quên thì bấm **Tạo mã khác**; mã cũ vẫn nằm trong danh sách để **Thu hồi**.
+- **Tối đa 4 bố/mẹ** một gia đình.
+- **Một Google chỉ thuộc một gia đình.** Ai đã ở trong gia đình rồi thì đăng nhập bình
+  thường, không cần mã mời.
+
 ## Chức năng đã có
 
 - Bố/mẹ: tổng quan, duyệt bài kèm ảnh bằng chứng, quản lý việc nhà (CRUD, lịch lặp
@@ -227,7 +249,7 @@ Ba điều đáng biết trước, vì chúng không phải lỗi:
   răng, phơi đồ, dọn đồ chơi… kèm điểm và tick "cần ảnh" cho từng việc), kho phần
   thưởng, duyệt đổi thưởng, quản lý tài khoản các bé (tạo, đổi PIN, đổi tên, cộng/trừ
   điểm thủ công có ghi log), thưởng nhanh và phạt nhanh một chạm kèm hoàn tác, báo cáo
-  7/30/90 ngày
+  7/30/90 ngày, **mời bố/mẹ thứ hai vào cùng gia đình bằng mã mời**
 - Bé: xem việc hôm nay **gom theo Chưa làm / Chờ bố/mẹ duyệt / Đã xong**, nộp bài (việc
   không cần ảnh chỉ một chạm), xem điểm, đổi quà, xem huy hiệu và chuỗi ngày
 - Điểm âm: bé tiêu hết điểm vẫn bị phạt, phần âm là "điểm nợ" hiển thị rõ và phải làm

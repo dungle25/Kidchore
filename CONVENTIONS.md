@@ -106,6 +106,32 @@ Hai điều dễ quên khi sửa phần này:
 Sửa schema thì **luôn thêm file mới** trong `db/migrations/`, không sửa file đã chạy.
 Migration runner ghi checksum nên file đã apply mà bị sửa sẽ báo `CHANGED since applied`.
 
+### Mời thêm bố/mẹ: lời mời là một thông tin xác thực
+
+Một gia đình có thể có nhiều bố/mẹ, và **chỉ có một đường vào**: mã mời.
+
+`accept_family_invite` và `bootstrap_parent` chạy lúc người dùng còn cầm token Google chứ
+chưa có session app — đúng tình huống mà chúng sinh ra để xử lý. Cả hai đều `SECURITY
+DEFINER` và suy danh tính từ `auth.uid()`.
+
+Nhận lời mời là trở thành PARENT **toàn quyền**: duyệt việc, cộng/trừ điểm, sửa và xoá
+việc, quản lý quà, đọc mọi thứ về các bé. Nên mã mời được đối xử như một mật khẩu:
+
+- **Chỉ lưu hash** (sha256). Hệ quả là không xem lại được mã — màn hình nói rõ điều đó và
+  mời tạo mã khác, thay vì để bố/mẹ tưởng còn quay lại xem được.
+- **Dùng một lần**, hết hạn sau 7 ngày, thu hồi được, tối đa 5 mã sống cùng lúc.
+- **Không có bảng chống dò**, và đây là chủ ý: PIN 4 chữ số cần khoá sau 8 lần vì chỉ có
+  10.000 khả năng, còn mã này là 32^12 = 2^60. Thêm bảng khoá chỉ để bảo vệ con số không.
+- Một tài khoản Google **chỉ thuộc một gia đình**. Người đã có gia đình gọi `accept` sẽ
+  nhận lại chính mình, không bị chuyển đi — nếu không thì con cái, điểm và lịch sử của họ
+  biến mất khỏi màn hình.
+- Sai, hết hạn, đã dùng và đã thu hồi **trả về cùng một thông báo**: nói rõ cái nào là nói
+  cho người lạ biết một mã từng tồn tại.
+
+Link mời đi qua `/join?code=...`, nơi mã được cất vào cookie `HttpOnly` rồi mới chuyển sang
+trang đăng nhập. Không giữ mã trong URL: nó sẽ vào lịch sử trình duyệt, header `Referer`, và
+log truy cập của mọi chặng — mà mã này đáng giá bằng một tài khoản bố/mẹ.
+
 ---
 
 ## 3. Code style
@@ -159,6 +185,8 @@ dự án này, cấu hình trông đúng nhưng hành vi sai.
 | `npm run test:award` | database | Thưởng nhanh và phạt nhanh, cả trường hợp phải bị từ chối |
 | `npm run test:push` | database | Đăng ký thiết bị nhận thông báo, và ai được báo về sự kiện nào |
 | `npm run test:suggested` | — | Danh mục việc gợi ý và luật của thao tác thêm nhanh (trùng tên, điểm không hợp lệ) |
+| `npm run test:invite-code` | — | Cách đọc mã mời khi người dùng gõ hoặc dán vào |
+| `npm run test:invites` | database | Mời bố/mẹ thứ hai: mọi trường hợp phải bị từ chối, và quyền của người được mời |
 | `npm run test:e2e` | app đang chạy | Kiểm tra HTTP: chặn route, cookie, Server Action |
 | `npm run validate:ci` | — | File workflow có hợp lệ và có chạy đúng script không |
 
@@ -473,6 +501,9 @@ Trước khi merge, tự hỏi:
 - **Thao tác ghi có idempotent không?** Bấm hai lần không được cộng điểm hai lần. Dùng
   điều kiện trạng thái trong `WHERE`, ví dụ `and status = 'SUBMITTED'`.
 - **Có ghi log không?** Thay đổi điểm phải để lại `point_transactions`.
+- **Nếu là một thông tin xác thực** (mã mời, token, liên kết bí mật): nó phải **dùng một
+  lần**, **hết hạn**, **thu hồi được**, và chỉ lưu **hash**. Kiểm luôn xem thông báo lỗi có
+  vô tình tiết lộ nó từng tồn tại hay không.
 
 ---
 
