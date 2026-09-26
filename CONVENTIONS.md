@@ -58,9 +58,25 @@ hash nào được trả về client. Sai 8 lần thì khoá 15 phút.
 | Kiểu dữ liệu và thông báo lỗi | `lib/domain.ts` |
 | Bảo vệ route | `proxy.ts` (Next 16 đổi tên từ `middleware.ts`) |
 
-`lib/dal.ts` là ranh giới. Mọi thứ khác đi qua nó. ESLint chặn việc import
-`@supabase/supabase-js` trong `app/` và `components/` để không ai vô tình dựng client
-riêng rồi bỏ qua phân quyền.
+`lib/dal.ts` là ranh giới. Mọi thứ khác đi qua nó. ESLint chặn việc import thẳng
+`@supabase/supabase-js` hay `@supabase/ssr` trong `app/` và `components/`, để không ai vô
+tình dựng client riêng rồi bỏ qua phân quyền. Import các wrapper trong `lib/supabase-*.ts`
+là đường được phép — đó chính là ranh giới.
+
+### Ai được dùng service role key
+
+`createAdminClient()` bỏ qua toàn bộ RLS. Đúng **hai** chỗ cần nó, cả hai vì không có danh
+tính người dùng nào để phân quyền:
+
+| Chỗ | Vì sao |
+|---|---|
+| Xác minh PIN của bé | Xảy ra trước khi có session. `child_login_subject` chỉ cấp cho `service_role`, không cấp cho `anon` |
+| Tải ảnh minh chứng lên Storage | Bucket chưa có policy cho `authenticated`. Đường dẫn object lấy từ `family_id` do database trả về, không từ client |
+
+Mọi thứ khác phục vụ dữ liệu trang cho người đã đăng nhập thì **không** được dùng. Ví dụ
+`listChildProfiles()` trước đây dùng admin client dù `list_child_profiles` đã được cấp cho
+`anon` — nay dùng `createAnonClient()`. Cấp thừa quyền không gây lỗi ngay, nó chỉ biến một
+thay đổi sau này thành lỗ hổng.
 
 Sửa schema thì **luôn thêm file mới** trong `db/migrations/`, không sửa file đã chạy.
 Migration runner ghi checksum nên file đã apply mà bị sửa sẽ báo `CHANGED since applied`.
@@ -70,6 +86,12 @@ Migration runner ghi checksum nên file đã apply mà bị sửa sẽ báo `CHA
 ## 3. Code style
 
 Định dạng do ESLint quyết định. Chạy `npm run lint` trước khi commit.
+
+Muốn biết **thật sự** rule nào đang bật, đừng đọc file này — hỏi ESLint:
+
+```bash
+npx eslint --print-config lib/dal.ts | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const r=JSON.parse(s).rules;console.log(r['@typescript-eslint/no-floating-promises'], r['@typescript-eslint/no-non-null-assertion'])})"
+```
 
 ### Bắt buộc bởi lint
 
@@ -101,17 +123,21 @@ Migration runner ghi checksum nên file đã apply mà bị sửa sẽ báo `CHA
 Nguyên tắc: **kiểm chứng bằng hành vi thật, không suy luận từ cấu hình.** Nhiều lần trong
 dự án này, cấu hình trông đúng nhưng hành vi sai.
 
-| Lệnh | Cần gì | Số kiểm tra |
+| Lệnh | Cần gì | Kiểm cái gì |
 |---|---|---|
-| `npm run lint` | — | — |
-| `npm run typecheck` | — | — |
-| `npm run test:db` | database | 27 |
-| `npm run test:onboarding` | database | 13 |
-| `npm run test:storage` | database + Storage | 10 |
-| `npm run test:reports` | database | 32 |
-| `npm run test:award` | database | 18 |
-| `npm run test:e2e` | app đang chạy | 32 |
-| `npm run validate:ci` | — | 46 |
+| `npm run lint` | — | Rule ở mục 3 |
+| `npm run typecheck` | — | `next typegen && tsc --noEmit` |
+| `npm run test:db` | database | Nghiệp vụ: nộp bài, duyệt, đổi quà, số dư |
+| `npm run test:onboarding` | database | Tạo gia đình, thêm bé, đăng nhập bằng PIN |
+| `npm run test:storage` | database + Storage | Tải ảnh minh chứng lên bucket |
+| `npm run test:reports` | database | Báo cáo, streak, huy hiệu |
+| `npm run test:award` | database | Thưởng nhanh và phạt nhanh, cả trường hợp phải bị từ chối |
+| `npm run test:e2e` | app đang chạy | 32 kiểm tra HTTP: chặn route, cookie, Server Action |
+| `npm run validate:ci` | — | File workflow có hợp lệ và có chạy đúng script không |
+
+Mỗi bộ in ra số kiểm tra ở cuối lần chạy. **Đừng chép số đó vào tài liệu này** — bảng trên
+từng ghi số cụ thể và đã sai hai lần, vì số kiểm tra tăng mà tài liệu thì không. Cái đáng
+ghi lại là bộ test **kiểm cái gì**, không phải nó có bao nhiêu dòng `check()`.
 
 Kiểm chứng trên bản đã deploy:
 
@@ -137,7 +163,10 @@ node scripts/test-deployed-workflow.mjs https://<domain>
 2. Push nhánh → Vercel tạo **Preview deployment**, production không đổi
 3. Mở PR → CI chạy
 4. Thử Preview URL
-5. CI xanh + approval → merge → Vercel deploy production từ `main`
+5. CI xanh → merge → Vercel deploy production từ `main`
+
+Bước 5 chỉ có CI, không có approval — xem lý do ngay dưới. Cổng chặn thật là
+`Lint, typecheck and build`, và nó chạy trên **mọi** PR.
 
 ### Điều kiện merge
 
@@ -263,6 +292,21 @@ chặn ghi ra ngoài workspace, không phải lỗi mạng. Cần cấp quyền 
 
 `next build` và `next dev` cần spawn tiến trình con với stdio dạng pipe; sandbox chặn và
 báo `spawn EPERM`. Đây là giới hạn môi trường, không phải lỗi code.
+
+### 6.9. Một rule được viết trong tài liệu không có nghĩa là nó đang chạy
+
+**Đã xảy ra:** mục 3 của chính file này liệt kê "bắt buộc bởi lint" gồm cấm `any`, cấm `!`,
+cấm promise trôi nổi, `===`, cấm throw literal. `eslint.config.mjs` khi đó vẫn là file mặc
+định của Create Next App: **không rule nào trong số đó được bật**. `npm run lint` vẫn xanh,
+nên không có gì gợi ý rằng tài liệu đang mô tả một hàng rào không tồn tại.
+
+Đúng lúc bật lên thì lộ ra ba lỗi thật đang nằm trong code: hai chỗ truyền hàm `async` vào
+`onClick`/`onChange` (React bỏ qua promise, lỗi thành unhandled rejection), và một `!` non-null
+trong `lib/session.ts`.
+
+**Quy tắc:** khi tài liệu nói "lint chặn X", phải kiểm bằng
+`npx eslint --print-config <file>` chứ không đọc tài liệu. Và một bộ test chỉ chạy khi có
+người nhớ ra thì không phải là bộ test — nó phải nằm trong CI.
 
 ---
 
