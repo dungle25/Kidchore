@@ -27,14 +27,21 @@ export default function proxy(request: NextRequest) {
 
   const isParentArea = pathname.startsWith("/parent");
   const isKidArea = pathname.startsWith("/kid");
-  const isLogin = pathname === "/login";
 
-  // A signed-in user has no reason to see the sign-in screen.
-  if (isLogin && session) {
-    const home = session.role === "PARENT" ? "/parent/dashboard" : "/kid/dashboard";
-    return NextResponse.redirect(new URL(home, origin));
-  }
-
+  /**
+   * `/login` is deliberately NOT redirected away from when a session exists.
+   *
+   * An earlier version sent any signed-in visitor to their dashboard, on the reasoning
+   * that they have no reason to see the sign-in screen. In this app that reasoning is
+   * wrong: "Đổi bé" and the sibling avatars deliberately send a signed-in child to
+   * `/login` to enter a sibling's PIN, because switching profiles has to stay behind the
+   * PIN. Redirecting them away turned the whole switch flow into a button that does
+   * nothing - and it looked like a dead link rather than a redirect, because the
+   * destination was the page they were already on.
+   *
+   * The PIN is what protects a profile, not the visibility of this screen, so leaving it
+   * reachable costs nothing: a successful sign-in replaces the session cookie.
+   */
   if (!isParentArea && !isKidArea) {
     return NextResponse.next();
   }

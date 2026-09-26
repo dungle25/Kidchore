@@ -170,6 +170,8 @@ Kiểm chứng trên bản đã deploy:
 ```bash
 node scripts/preflight-signin.mjs https://<domain>
 node scripts/test-deployed-workflow.mjs https://<domain>
+node scripts/test-deployed-child-flow.mjs https://<domain>
+node scripts/test-deployed-profile-switch.mjs https://<domain>
 ```
 
 ### Quy tắc viết test
@@ -407,6 +409,33 @@ node scripts/gh-pr.mjs status --number <N>
 Vì branch protection bật "nhánh phải chứa `main` mới nhất", xung đột kiểu này sẽ còn gặp
 lại mỗi khi `main` nhận một PR khác. Cách sửa: `git fetch origin main && git rebase origin/main`,
 rồi `git push --force-with-lease=<nhánh>:<sha cũ>`.
+
+### 6.13. Test chỉ chạy ở trạng thái chưa đăng nhập thì không kiểm được gì về người dùng thật
+
+**Đã xảy ra:** tính năng "Đổi bé" hỏng hoàn toàn trên production. Bấm vào avatar của bé
+kia thì **không có gì xảy ra** — URL đổi thành `/login?switchTo=ken159` rồi bị đá thẳng về
+`/kid/dashboard`, nên nó trông như một liên kết chết.
+
+Nguyên nhân: `proxy.ts` có luật "người đã đăng nhập thì không cần thấy màn đăng nhập", và
+`pathname` **không** chứa query string, nên `?switchTo=...` chưa bao giờ được xét. Cả nút
+"Đổi bé" lẫn avatar của anh chị em đều đi qua `/login`, nên cả hai đều chết.
+
+Điều đáng ghi lại là **bộ test đã xanh suốt**: `test-deployed-profile-switch.mjs` kiểm
+`/login?switchTo=...` — nhưng luôn bằng một lượt fetch **ẩn danh**. Mà người duy nhất dùng
+luồng này là người **đã đăng nhập**. Nó kiểm tra đúng URL, đúng nội dung, sai trạng thái.
+
+**Quy tắc:**
+
+- **Kiểm tra màn hình ở đúng trạng thái mà người dùng thật đang ở.** Với app này, phần lớn
+  màn hình chỉ có nghĩa khi *đã* đăng nhập. Một lượt fetch ẩn danh chỉ chứng minh được route
+  công khai hoạt động.
+- **"Màn hình mở ra" và "tính năng chạy" là hai khẳng định khác nhau.** Form thì phải
+  **submit**. Next.js nhúng sẵn các field `$ACTION_*` trong form cho progressive enhancement,
+  nên dựng lại đúng cú submit của browser là làm được, không cần trình duyệt — xem mục 6 của
+  `test-deployed-profile-switch.mjs`, nơi gửi PIN của bé kia và kiểm tra cookie phiên đổi
+  đúng sang bé đó.
+- **Triệu chứng "bấm không có gì xảy ra" thường là một redirect về chính trang đang đứng.**
+  Kiểm bằng `redirect: "manual"` để thấy mã 307 và `Location`, đừng chỉ `fetch` rồi đọc HTML.
 
 ---
 
