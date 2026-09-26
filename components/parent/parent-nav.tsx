@@ -9,6 +9,7 @@ const links = [
   { href: "/parent/chores", label: "Duyệt việc", icon: "✅" },
   { href: "/parent/tasks", label: "Việc", icon: "📋" },
   { href: "/parent/rewards", label: "Thưởng", icon: "🎁" },
+  { href: "/parent/reports", label: "Báo cáo", icon: "📊" },
   { href: "/parent/family", label: "Gia đình", icon: "👨‍👩‍👧" },
 ];
 

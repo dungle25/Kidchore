@@ -120,6 +120,69 @@ export interface PendingRedemption {
   child_balance: number;
 }
 
+/** A child's persistence score. Both counts are in days. */
+export interface Streak {
+  current: number;
+  longest: number;
+  today_complete: boolean;
+}
+
+/** One day in the completion series. Days with no work at all are absent. */
+export interface DailyCompletion {
+  day: string;
+  assigned: number;
+  approved: number;
+  complete: boolean;
+}
+
+export interface ChildReportTotals {
+  assigned: number;
+  approved: number;
+  submitted: number;
+  rejected: number;
+  points_earned: number;
+}
+
+export interface ChildReport {
+  id: string;
+  display_name: string;
+  points_balance: number;
+  streak: Streak;
+  totals: ChildReportTotals;
+  daily: DailyCompletion[];
+}
+
+export interface ParentReports {
+  from: string;
+  to: string;
+  days: number;
+  children: ChildReport[];
+  family_totals: { assigned: number; approved: number };
+}
+
+/** A badge is derived from the data on every read, never stored. */
+export interface Badge {
+  code: string;
+  title: string;
+  icon: string;
+  earned: boolean;
+  progress: number;
+  target: number;
+}
+
+export interface KidAchievements {
+  child: {
+    id: string;
+    display_name: string;
+    points_balance: number;
+  };
+  streak: Streak;
+  approved_total: number;
+  badges: Badge[];
+  history: PointTransaction[];
+  transaction_count: number;
+}
+
 export interface ParentReward {
   id: string;
   title: string;

@@ -8,6 +8,7 @@ const links = [
   { href: "/kid/dashboard", label: "Hôm nay", icon: "🏠" },
   { href: "/kid/tasks", label: "Việc của con", icon: "📋" },
   { href: "/kid/rewards", label: "Đổi quà", icon: "🎁" },
+  { href: "/kid/achievements", label: "Thành tích", icon: "🏆" },
 ];
 
 export interface Sibling {
