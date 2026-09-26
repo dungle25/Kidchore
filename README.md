@@ -80,6 +80,15 @@ npm run test:e2e     # 32 kiểm tra HTTP (cần app đang chạy)
 npm run validate:ci  # kiểm tra cấu hình CI
 ```
 
+Kiểm chứng trên bản **đã deploy** (không cần chạy app ở máy):
+
+```bash
+node scripts/preflight-signin.mjs https://<domain>       # chuỗi đăng nhập
+node scripts/test-deployed-workflow.mjs https://<domain> # 19 kiểm tra toàn bộ luồng
+node scripts/check-onboarding-state.mjs                  # đã có gia đình chưa
+node scripts/check-deployment-env.mjs https://<domain>    # biến môi trường
+```
+
 `test:db` tạo một gia đình tạm rồi chạy qua toàn bộ luồng (nộp bài → duyệt → cộng
 điểm, đổi thưởng, đăng nhập PIN), bao gồm cả các trường hợp **phải bị từ chối**:
 nộp bài của bé khác, cộng điểm hai lần khi bấm duyệt twice, sửa chữ ký token, và
