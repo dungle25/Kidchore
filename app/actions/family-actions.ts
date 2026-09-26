@@ -181,6 +181,35 @@ export async function adjustPoints(input: {
 }
 
 /**
+ * Sets which avatar a child shows.
+ *
+ * The value is a preset key from `lib/avatars.ts`, not an emoji and not a URL. The
+ * database validates the shape, so this layer only has to pass it through - and passing
+ * it through is all it does, because the alternative (composing a URL here) is how a
+ * column that ends up in `<img src>` acquires a value nobody validated.
+ *
+ * Not written to `point_transactions`: an avatar is not a points change.
+ */
+export async function setChildAvatar(
+  childId: string,
+  avatar: string | null
+): Promise<ActionResult> {
+  try {
+    const { db } = await requireRole("PARENT");
+    await callRpc(db, "set_child_avatar", {
+      p_child_id: childId,
+      p_avatar: avatar,
+    });
+    revalidatePath("/parent/family");
+    revalidatePath("/kid/dashboard");
+    revalidatePath("/login");
+    return { ok: true };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/**
  * Creates an invite code for a second parent.
  *
  * The code comes back in the return value and is **never** available again: the database

@@ -9,10 +9,12 @@ import {
   setChildPin,
 } from "@/app/actions/family-actions";
 import { EmptyState } from "@/components/ui";
+import Avatar from "@/components/avatar";
 import type { ParentChild } from "@/lib/domain";
+import AvatarPicker from "./avatar-picker";
 
 /**
- * Family management: create children, reset PINs, rename, and adjust points.
+ * Family management: create children, reset PINs, rename, adjust points and pick avatars.
  *
  * PINs are typed here and passed straight to the database, where they are hashed
  * with bcrypt. Nothing in this component or its server action stores or logs the
@@ -251,17 +253,20 @@ export default function FamilyManager({ kids }: { kids: ParentChild[] }) {
               className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h2 className="font-semibold text-slate-800">
-                    {child.display_name}
-                  </h2>
-                  <p className="text-xs text-slate-400">
-                    @{child.username ?? "—"} ·{" "}
-                    {child.points_balance < 0
-                      ? `nợ ${Math.abs(child.points_balance)} điểm`
-                      : `${child.points_balance} điểm`}{" "}
-                    · đã xong {child.approved_total} việc
-                  </p>
+                <div className="flex items-center gap-3">
+                  <Avatar value={child.avatar_url} size={44} />
+                  <div>
+                    <h2 className="font-semibold text-slate-800">
+                      {child.display_name}
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      @{child.username ?? "—"} ·{" "}
+                      {child.points_balance < 0
+                        ? `nợ ${Math.abs(child.points_balance)} điểm`
+                        : `${child.points_balance} điểm`}{" "}
+                      · đã xong {child.approved_total} việc
+                    </p>
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -272,6 +277,12 @@ export default function FamilyManager({ kids }: { kids: ParentChild[] }) {
                   Đổi tên
                 </button>
               </div>
+
+              <AvatarPicker
+                childId={child.id}
+                childName={child.display_name}
+                current={child.avatar_url}
+              />
 
               {!child.can_sign_in && (
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">

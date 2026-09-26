@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { signInWithPin, type ActionState } from "@/app/actions/auth-actions";
+import Avatar from "@/components/avatar";
 import type { ChildProfile } from "@/lib/domain";
 
 const initialState: ActionState = {};
@@ -108,18 +109,7 @@ function PinCard({
       <input type="hidden" name="username" value={profile.username} />
 
       <div className="flex items-center gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-violet-100 text-xl">
-          {profile.avatar_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={profile.avatar_url}
-              alt=""
-              className="h-12 w-12 rounded-full object-cover"
-            />
-          ) : (
-            <span aria-hidden>🙂</span>
-          )}
-        </div>
+        <Avatar value={profile.avatar_url} size={48} />
         <div className="flex-1">
           <p className="text-lg font-semibold text-slate-800">
             {profile.display_name}

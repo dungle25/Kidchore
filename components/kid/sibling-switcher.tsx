@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Avatar from "@/components/avatar";
 import type { Sibling } from "./kid-nav";
 
 /**
@@ -28,18 +29,7 @@ export default function SiblingSwitcher({ siblings }: { siblings: Sibling[] }) {
             href={`/login?switchTo=${encodeURIComponent(sibling.username)}`}
             className="flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 py-2 pl-2 pr-4 transition hover:bg-violet-100"
           >
-            <span className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-white text-lg">
-              {sibling.avatar_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={sibling.avatar_url}
-                  alt=""
-                  className="h-9 w-9 object-cover"
-                />
-              ) : (
-                <span aria-hidden>🙂</span>
-              )}
-            </span>
+            <Avatar value={sibling.avatar_url} size={36} className="bg-white" />
             <span className="text-sm font-semibold text-violet-900">
               {sibling.display_name}
             </span>

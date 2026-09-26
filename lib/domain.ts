@@ -296,6 +296,7 @@ export const DB_ERROR_MESSAGES: Record<string, string> = {
   FAMILY_FULL: "Gia đình này đã đủ số người. Nhờ người trong gia đình kiểm tra lại.",
   TOO_MANY_ACTIVE_INVITES:
     "Đang có quá nhiều mã mời chưa dùng. Thu hồi bớt rồi tạo mã mới.",
+  INVALID_AVATAR: "Ảnh đại diện này không hợp lệ. Vui lòng chọn lại từ danh sách.",
 };
 
 /** Turns a raw Supabase/Postgres error into a message safe to show a user. */
