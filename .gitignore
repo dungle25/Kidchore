@@ -44,4 +44,8 @@ next-env.d.ts
 
 # local scratch files
 commitmsg.txt
+commit-msg-*.txt
 *.tmp
+
+# downloaded CI logs
+ci-log-*.txt
