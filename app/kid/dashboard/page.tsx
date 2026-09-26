@@ -52,9 +52,26 @@ export default async function KidDashboardPage() {
       </header>
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 p-5 text-white shadow">
-          <p className="text-sm font-medium opacity-90">Điểm của con</p>
-          <p className="text-4xl font-extrabold">{child.points_balance}</p>
+        {/* A negative balance is not a display glitch: it is điểm nợ the child has to work
+            off, so the card stops looking like a reward the moment it crosses zero. */}
+        <div
+          className={`rounded-2xl bg-gradient-to-r p-5 text-white shadow ${
+            child.points_balance < 0
+              ? "from-rose-500 to-red-600"
+              : "from-green-500 to-emerald-600"
+          }`}
+        >
+          <p className="text-sm font-medium opacity-90">
+            {child.points_balance < 0
+              ? `Con đang nợ ${Math.abs(child.points_balance)} điểm`
+              : "Điểm của con"}
+          </p>
+          <p className="text-4xl font-extrabold">
+            {child.points_balance < 0 ? `-${Math.abs(child.points_balance)}` : child.points_balance}
+          </p>
+          {child.points_balance < 0 && (
+            <p className="mt-1 text-xs opacity-90">Làm việc để trả hết nợ nhé!</p>
+          )}
         </div>
         <div className="rounded-2xl bg-white p-5 shadow-sm">
           <p className="text-xs font-medium uppercase text-slate-500">

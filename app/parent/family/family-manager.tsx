@@ -142,12 +142,17 @@ export default function FamilyManager({ kids }: { kids: ParentChild[] }) {
       setRows((current) =>
         current.map((row) =>
           row.id === child.id
-            ? { ...row, points_balance: row.points_balance + amount }
+            // The database's balance, not row.points_balance + amount: a deduction is no
+            // longer bounded by the balance, so local arithmetic can be wrong.
+            ? { ...row, points_balance: result.balance }
             : row
         )
       );
       setFeedback({
-        text: `Đã ${amount > 0 ? "cộng" : "trừ"} ${Math.abs(amount)} điểm cho ${child.display_name}.`,
+        text:
+          result.balance < 0
+            ? `Đã ${amount > 0 ? "cộng" : "trừ"} ${Math.abs(amount)} điểm cho ${child.display_name}. Bé đang nợ ${Math.abs(result.balance)} điểm.`
+            : `Đã ${amount > 0 ? "cộng" : "trừ"} ${Math.abs(amount)} điểm cho ${child.display_name}.`,
         ok: true,
       });
     });
@@ -251,8 +256,11 @@ export default function FamilyManager({ kids }: { kids: ParentChild[] }) {
                     {child.display_name}
                   </h2>
                   <p className="text-xs text-slate-400">
-                    @{child.username ?? "—"} · {child.points_balance} điểm · đã xong{" "}
-                    {child.approved_total} việc
+                    @{child.username ?? "—"} ·{" "}
+                    {child.points_balance < 0
+                      ? `nợ ${Math.abs(child.points_balance)} điểm`
+                      : `${child.points_balance} điểm`}{" "}
+                    · đã xong {child.approved_total} việc
                   </p>
                 </div>
                 <button

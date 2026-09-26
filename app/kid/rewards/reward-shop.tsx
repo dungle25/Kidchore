@@ -72,9 +72,23 @@ export default function RewardShop({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 p-5 text-white shadow">
-        <p className="text-sm font-medium opacity-90">Điểm của con</p>
-        <p className="text-4xl font-extrabold">{points} điểm</p>
+      {/* Debt is shown as debt, not as a small number that still looks like savings. */}
+      <div
+        className={`rounded-2xl bg-gradient-to-r p-5 text-white shadow ${
+          points < 0 ? "from-rose-500 to-red-600" : "from-green-500 to-emerald-600"
+        }`}
+      >
+        <p className="text-sm font-medium opacity-90">
+          {points < 0 ? "Con đang nợ" : "Điểm của con"}
+        </p>
+        <p className="text-4xl font-extrabold">
+          {points < 0 ? `-${Math.abs(points)} điểm` : `${points} điểm`}
+        </p>
+        {points < 0 && (
+          <p className="mt-1 text-xs opacity-90">
+            Con cần trả hết nợ trước khi đổi quà nhé.
+          </p>
+        )}
       </div>
 
       {feedback && (

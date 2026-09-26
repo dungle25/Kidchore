@@ -53,7 +53,7 @@ CREATE TABLE users (
     password_hash VARCHAR(255),
     pin_code VARCHAR(10),         -- PIN đăng nhập nhanh cho trẻ hoặc xác thực thao tác Parent
     avatar_url TEXT,
-    points_balance INT DEFAULT 0 CHECK (points_balance >= 0),
+    points_balance INT DEFAULT 0, -- Có thể âm: bé vẫn bị phạt khi đã hết điểm (điểm nợ)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 

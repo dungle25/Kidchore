@@ -182,7 +182,10 @@ export default function RewardManager({
                   </span>
                 </div>
                 <p className="mt-1 text-sm text-slate-500">
-                  {item.child_name} · hiện có {item.child_balance} điểm
+                  {item.child_name} ·{" "}
+                  {item.child_balance < 0
+                    ? `đang nợ ${Math.abs(item.child_balance)} điểm`
+                    : `hiện có ${item.child_balance} điểm`}
                 </p>
                 {item.reward_description && (
                   <p className="mt-1 text-sm text-slate-600">

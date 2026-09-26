@@ -3,8 +3,13 @@
  *
  * A one-tap award and a one-tap penalty must be just as safe as the fuller form on the
  * Gia đình screen: both go through the same `adjust_points` function, so each tap must be
- * recorded in the audit log, be refused for a child session, never cross a family
- * boundary, and never be able to push a balance below zero.
+ * recorded in the audit log, be refused for a child session, and never cross a family
+ * boundary.
+ *
+ * A penalty, unlike an award, is never refused and never clamped: since migration 0010 the
+ * balance may go negative, so a child with nothing left to take is still punished and the
+ * punishment still leaves a trace. The negative balance is "điểm nợ" the child works off,
+ * and it must not become free spending — a child in debt cannot request a reward.
  *
  * Usage: node scripts/test-quick-award.mjs
  */
@@ -276,27 +281,6 @@ try {
     `balance=${afterDeduct.rows[0].points_balance}`
   );
 
-  const overdraft = await rpc(parentToken, "adjust_points", {
-    p_child_id: childId,
-    p_amount: -999,
-    p_description: "trừ quá số dư",
-  });
-  check(
-    "a deduction below zero is refused by the balance constraint",
-    overdraft.status !== 200,
-    `status=${overdraft.status} :: ${JSON.stringify(overdraft.data)?.slice(0, 140)}`
-  );
-
-  const finalBalance = await db.query(
-    "select points_balance from public.users where id = $1",
-    [childId]
-  );
-  check(
-    "the failed overdraft left the balance alone",
-    finalBalance.rows[0].points_balance === 5,
-    `balance=${finalBalance.rows[0].points_balance}`
-  );
-
   // ---- 7. Quick penalty: the mirror of the award ----
   console.log("\n7. A quick penalty deducts exactly what was tapped");
   const penalty = await rpc(parentToken, "adjust_points", {
@@ -359,8 +343,12 @@ try {
 
   // ---- 8. Penalties are as restricted as awards ----
   console.log("\n8. Authorization and family isolation for penalties");
-  // Attempted while the balance is 2, so a refusal can only come from the role check and
-  // not from the balance constraint.
+  const txBeforePenaltyRefusals = await db.query(
+    "select count(*)::int as n from public.point_transactions where user_id = $1",
+    [childId]
+  );
+
+  // Attempted while the balance is 2, so a refusal can only come from the role check.
   const childPenalty = await rpc(childToken, "adjust_points", {
     p_child_id: childId,
     p_amount: -1,
@@ -403,8 +391,37 @@ try {
     `balance=${outsiderAfterPenalty.rows[0].points_balance}`
   );
 
-  // ---- 9. A penalty can never push the balance below zero ----
-  console.log("\n9. A penalty can never push the balance below zero");
+  // A refused attempt must leave no trace at all — no audit entry, not merely no balance
+  // movement. Now that a deduction can always succeed, this is the only refusal left.
+  const txAfterPenaltyRefusals = await db.query(
+    "select count(*)::int as n from public.point_transactions where user_id = $1",
+    [childId]
+  );
+  check(
+    "the refused attempts wrote no audit entry",
+    txAfterPenaltyRefusals.rows[0].n === txBeforePenaltyRefusals.rows[0].n,
+    `before=${txBeforePenaltyRefusals.rows[0].n} after=${txAfterPenaltyRefusals.rows[0].n}`
+  );
+
+  // ---- 9. A penalty larger than the balance is recorded in full ----
+  console.log("\n9. A penalty larger than the balance becomes điểm nợ");
+  // Requirement from the owner: a child can be punished even with nothing left to take, so
+  // the balance is allowed to go negative. "Phạt nhanh" must record the amount the parent
+  // tapped — refusing it would leave the punishment unrecorded, and clamping would record
+  // an amount nobody asked for.
+  const balanceConstraint = await db.query(
+    `select conname from pg_constraint
+     where conrelid = 'public.users'::regclass and contype = 'c'
+       and conname = 'users_points_balance_check'`
+  );
+  check(
+    "the old CHECK (points_balance >= 0) is gone (migration 0010 applied)",
+    balanceConstraint.rows.length === 0,
+    `constraints=${JSON.stringify(balanceConstraint.rows)}`
+  );
+
+  // Walk the small balance to exactly zero first: with debt allowed, this is how a parent
+  // clears a balance of 2 without over-penalising.
   const toOne = await rpc(parentToken, "adjust_points", {
     p_child_id: childId,
     p_amount: -1,
@@ -412,8 +429,6 @@ try {
   });
   check("-1 from 2 is accepted", toOne.status === 200, `status=${toOne.status}`);
 
-  // The card keeps "-1" enabled at every balance above zero, so this is the tap a parent
-  // uses to walk a small balance down to exactly zero.
   const toZero = await rpc(parentToken, "adjust_points", {
     p_child_id: childId,
     p_amount: -1,
@@ -425,65 +440,130 @@ try {
     `status=${toZero.status} :: ${JSON.stringify(toZero.data)}`
   );
 
-  // The two taps above are the last ones allowed to succeed. Everything from here is
-  // refused, so the audit log must not grow.
-  const txBeforeRefusals = await db.query(
-    "select count(*)::int as n from public.point_transactions where user_id = $1",
-    [childId]
-  );
-
-  const belowZero = await rpc(parentToken, "adjust_points", {
-    p_child_id: childId,
-    p_amount: -1,
-    p_description: "Phạt nhanh -1 điểm",
-  });
-  check(
-    "one more point is refused at zero",
-    belowZero.status !== 200,
-    `status=${belowZero.status} :: ${JSON.stringify(belowZero.data)?.slice(0, 140)}`
-  );
-
-  const overdraftPenalty = await rpc(parentToken, "adjust_points", {
+  const debtPenalty = await rpc(parentToken, "adjust_points", {
     p_child_id: childId,
     p_amount: -5,
     p_description: "Phạt nhanh -5 điểm",
   });
   check(
-    "a penalty larger than the balance is refused, not clamped",
-    overdraftPenalty.status !== 200,
-    `status=${overdraftPenalty.status} :: ${JSON.stringify(overdraftPenalty.data)?.slice(0, 140)}`
+    "a 5-point penalty on a 0 balance is accepted, not refused",
+    debtPenalty.status === 200,
+    `status=${debtPenalty.status} :: ${JSON.stringify(debtPenalty.data)?.slice(0, 140)}`
   );
   check(
-    "the refusal names the constraint the card maps to a Vietnamese message",
-    JSON.stringify(overdraftPenalty.data ?? "").includes("users_points_balance_check"),
-    JSON.stringify(overdraftPenalty.data)?.slice(0, 160)
+    "the deduction is the amount tapped, not clamped to the balance",
+    Number(debtPenalty.data) === -5,
+    `data=${JSON.stringify(debtPenalty.data)}`
   );
 
-  const afterRefusals = await db.query(
+  const afterDebt = await db.query(
     "select points_balance from public.users where id = $1",
     [childId]
   );
   check(
-    "the balance stayed at zero",
-    afterRefusals.rows[0].points_balance === 0,
-    `balance=${afterRefusals.rows[0].points_balance}`
+    "the stored balance is -5, i.e. điểm nợ",
+    afterDebt.rows[0].points_balance === -5,
+    `balance=${afterDebt.rows[0].points_balance}`
   );
 
-  const txAfterRefusals = await db.query(
-    "select count(*)::int as n from public.point_transactions where user_id = $1",
+  const debtTx = await db.query(
+    `select amount, type, description
+     from public.point_transactions
+     where user_id = $1
+     order by created_at desc
+     limit 1`,
     [childId]
   );
   check(
-    "a refused penalty writes no audit entry",
-    txAfterRefusals.rows[0].n === txBeforeRefusals.rows[0].n,
-    `before=${txBeforeRefusals.rows[0].n} after=${txAfterRefusals.rows[0].n}`
+    "the debt is in the audit log like any other penalty",
+    debtTx.rows[0]?.type === "MANUAL_ADJUSTMENT" && debtTx.rows[0]?.amount === -5,
+    JSON.stringify(debtTx.rows[0])
+  );
+  check(
+    "its description is still readable Vietnamese",
+    (debtTx.rows[0]?.description ?? "").includes("Phạt nhanh"),
+    JSON.stringify(debtTx.rows[0]?.description)
+  );
+
+  const kidInDebt = await rpc(childToken, "kid_dashboard");
+  check(
+    "the child's own view shows the negative balance",
+    kidInDebt.data?.child?.points_balance === -5,
+    `balance=${kidInDebt.data?.child?.points_balance}`
+  );
+
+  // There is no floor: the app must never quietly cap a punishment the family meant to give.
+  const deeper = await rpc(parentToken, "adjust_points", {
+    p_child_id: childId,
+    p_amount: -1,
+    p_description: "Phạt nhanh -1 điểm",
+  });
+  check(
+    "a further penalty deepens the debt (-5 - 1 = -6)",
+    deeper.status === 200 && Number(deeper.data) === -6,
+    `status=${deeper.status} :: ${JSON.stringify(deeper.data)}`
+  );
+
+  // Debt is not a dead end: points the child earns pay it down.
+  const payBack = await rpc(parentToken, "adjust_points", {
+    p_child_id: childId,
+    p_amount: 3,
+    p_description: "Thưởng nhanh +3 điểm",
+  });
+  check(
+    "a bonus pays the debt down (-6 + 3 = -3)",
+    payBack.status === 200 && Number(payBack.data) === -3,
+    `status=${payBack.status} :: ${JSON.stringify(payBack.data)}`
+  );
+
+  // Debt must not become free spending: a reward costs points the child does not have.
+  const reward = await db.query(
+    `insert into public.rewards (family_id, title, points_required, stock, is_active)
+     values ($1, 'QA Quà', 1, -1, true) returning id`,
+    [familyId]
+  );
+  const debtRequest = await rpc(childToken, "request_reward", {
+    p_reward_id: reward.rows[0].id,
+  });
+  check(
+    "a child in debt cannot request a reward",
+    debtRequest.status !== 200,
+    `status=${debtRequest.status} :: ${JSON.stringify(debtRequest.data)?.slice(0, 140)}`
+  );
+  check(
+    "the refusal is INSUFFICIENT_POINTS, not a crash",
+    JSON.stringify(debtRequest.data ?? "").includes("INSUFFICIENT_POINTS"),
+    JSON.stringify(debtRequest.data)?.slice(0, 140)
+  );
+
+  const debtAfterRequest = await db.query(
+    "select points_balance from public.users where id = $1",
+    [childId]
+  );
+  check(
+    "the refused request left the debt alone",
+    debtAfterRequest.rows[0].points_balance === -3,
+    `balance=${debtAfterRequest.rows[0].points_balance}`
+  );
+
+  // The card's one-tap undo has to work from a negative balance too, otherwise a mistaken
+  // penalty on a child with no points would be the one mistake a parent cannot take back.
+  const undoDebt = await rpc(parentToken, "adjust_points", {
+    p_child_id: childId,
+    p_amount: 3,
+    p_description: "Hoàn tác phạt nhanh +3 điểm",
+  });
+  check(
+    "the card's undo clears the debt (-3 + 3 = 0)",
+    undoDebt.status === 200 && Number(undoDebt.data) === 0,
+    `status=${undoDebt.status} :: ${JSON.stringify(undoDebt.data)}`
   );
 
   // ---- 10. The card sends what the checks above assume ----
   console.log("\n10. The card's penalty path matches this test");
   // The component cannot be executed here (React client component), so this reads the
-  // literal it sends. Step 7 asserts the same string arrived in the database, so the two
-  // cannot drift apart unnoticed.
+  // literals it sends and renders. Step 7 asserts the same description arrived in the
+  // database, so the two cannot drift apart unnoticed.
   const cardSource = readFileSync("app/parent/dashboard/child-card.tsx", "utf8");
   check(
     "the card sends the mirrored penalty description",
@@ -496,9 +576,13 @@ try {
     ""
   );
   check(
-    "the card disables a penalty larger than the displayed balance",
-    cardSource.includes("const affordable = balance >= amount;") &&
-      cardSource.includes("disabled={pending || !affordable}"),
+    "the card never disables a penalty by balance (a debt is allowed)",
+    !cardSource.includes("!affordable") && !cardSource.includes("const affordable"),
+    ""
+  );
+  check(
+    "the card warns that a penalty can become điểm nợ",
+    cardSource.includes("điểm nợ") && cardSource.includes("Nợ ${Math.abs(balance)} điểm"),
     ""
   );
   check(
@@ -507,12 +591,20 @@ try {
     ""
   );
 
-  // Closes the loop with step 9: the constraint name that arrived in the refusal payload
-  // is the key the UI looks up to turn it into Vietnamese. If the constraint is ever
-  // renamed, this fails instead of the parent silently getting the generic error text.
+  // The child-facing view must not present a debt as a positive-looking number.
+  const kidDashSource = readFileSync("app/kid/dashboard/page.tsx", "utf8");
+  check(
+    "the child's dashboard shows a negative balance as debt",
+    kidDashSource.includes("Con đang nợ"),
+    ""
+  );
+
+  // Still worth keeping even though migration 0010 removed the constraint: on a database
+  // that has not run it yet, this is the entry that turns the raw Postgres error into
+  // Vietnamese instead of the generic "Có lỗi xảy ra".
   const domainSource = readFileSync("lib/domain.ts", "utf8");
   check(
-    "the domain error table has an entry for the real constraint name",
+    "the domain error table still covers the old constraint name",
     domainSource.includes("users_points_balance_check:"),
     ""
   );
