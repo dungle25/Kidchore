@@ -1,63 +1,85 @@
 /**
- * Runs every database-backed test suite in one go and reports a single summary.
+ * Runs every test suite in one go and reports a single summary.
  *
- * The suites are separate scripts so each can be run alone while working on one area.
- * CI needs them together: one command, one pass/fail, and a summary table in the job
- * output showing which suite failed rather than only that something did.
+ * The suites are separate scripts so each can be run alone while working on one area. CI
+ * needs them together: one command, one pass/fail, and a summary table in the job output
+ * showing which suite failed rather than only that something did.
+ *
+ * Suites that need no database run first, so a pure logic bug is reported before the slow
+ * database work starts. `--quick` skips only the HTTP suite, which needs a full build.
  *
  * Usage:
  *   node scripts/test-all.mjs              # everything
- *   node scripts/test-all.mjs --quick      # skip the HTTP suite, which needs a server
+ *   node scripts/test-all.mjs --quick      # skip the HTTP suite
+ *   node scripts/test-all.mjs --no-db      # only the suites that need no database
  */
 import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync } from "node:fs";
 
-const quick = process.argv.includes("--quick");
+const args = process.argv.slice(2);
+const quick = args.includes("--quick");
+const noDb = args.includes("--no-db");
 
-const suites = [
+/** Pure logic, no database and no server. Safe to run anywhere, including the CI job that
+ * deliberately has no secrets. */
+const unitSuites = [
+  {
+    name: "CI configuration",
+    script: "scripts/validate-ci.mjs",
+    needsDb: false,
+  },
+  {
+    name: "Report day alignment",
+    script: "scripts/test-report-days.mjs",
+    needsDb: false,
+  },
+];
+
+/** These read and write a real database. */
+const databaseSuites = [
   {
     name: "Business logic",
     script: "scripts/test-flows.mjs",
-    needs: [],
   },
   {
     name: "Onboarding",
     script: "scripts/test-onboarding.mjs",
-    needs: [],
   },
   {
     name: "Storage upload",
     script: "scripts/test-storage-upload.mjs",
-    needs: [],
   },
   {
     name: "Reports and streaks",
     script: "scripts/test-reports-and-streaks.mjs",
-    needs: [],
   },
   {
-    name: "Quick award",
+    name: "Quick award and penalty",
     script: "scripts/test-quick-award.mjs",
-    needs: [],
   },
   {
     name: "HTTP end to end",
     script: "scripts/test-e2e.mjs",
     // The suite builds and starts the app itself, then stops it again, so one command
     // covers everything. Skipped in a quick run because the build takes a while.
-    args: ["--start-server"],
+    extraArgs: ["--start-server"],
     skipWhenQuick: true,
   },
 ];
 
-if (!existsSync(".env.local")) {
+// Only the database suites need a real project. `--no-db` is meant to run in the CI job
+// that deliberately has no secrets, so the check is skipped for it.
+if (!noDb && !existsSync(".env.local")) {
   console.error(
-    "No .env.local found. These suites need a real database and Storage bucket."
+    "No .env.local found. The database suites need a real project and Storage bucket."
   );
+  console.error("Use --no-db to run only the suites that need no database.");
   process.exit(1);
 }
 
 const results = [];
+
+const suites = noDb ? unitSuites : [...unitSuites, ...databaseSuites];
 
 for (const suite of suites) {
   if (quick && suite.skipWhenQuick) {
@@ -69,7 +91,7 @@ for (const suite of suites) {
   console.log(`\n${"=".repeat(64)}\nRUN   ${suite.name}  (${suite.script})\n${"=".repeat(64)}`);
 
   const started = Date.now();
-  const run = spawnSync(process.execPath, [suite.script, ...(suite.args ?? [])], {
+  const run = spawnSync(process.execPath, [suite.script, ...(suite.extraArgs ?? [])], {
     stdio: "inherit",
   });
   const seconds = ((Date.now() - started) / 1000).toFixed(1);
@@ -99,7 +121,7 @@ console.log(
 
 if (process.env.GITHUB_STEP_SUMMARY) {
   const lines = [
-    "### Database test suites",
+    `### Test suites${noDb ? " (no database)" : ""}`,
     "",
     "| Suite | Result | Time |",
     "| --- | --- | --- |",
