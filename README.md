@@ -171,6 +171,7 @@ Cách xác minh duy nhất đáng tin: **đăng nhập thật trong cửa sổ �
 
    `npm run vercel:env` ghi ra `vercel-env.txt` (đã gitignore) để copy cho nhanh.
 4. Deploy, rồi thêm domain Vercel vào **Redirect URLs** ở bước 4 phía trên.
+5. Tùy chọn — bật thông báo đẩy: thêm 3 biến nữa, xem mục dưới.
 
 Kiểm tra deployment đã nhận biến chưa:
 
@@ -188,18 +189,52 @@ Lưu ý về gói miễn phí:
 - Storage miễn phí 1GB. Nếu bật ảnh bằng chứng, nên nén ảnh ở client trước khi
   upload.
 
+## Bật thông báo đẩy
+
+Không bắt buộc. Không có 3 biến dưới đây thì app chạy y như thường, chỉ là không có
+nút "Bật thông báo" (giao diện tự ẩn).
+
+1. Sinh một cặp khoá:
+
+   ```bash
+   npx web-push generate-vapid-keys --json
+   ```
+
+2. Thêm vào Vercel (Production **và** Preview):
+   - `NEXT_PUBLIC_VAPID_PUBLIC_KEY` — khoá công khai, đưa cho trình duyệt khi đăng ký
+   - `VAPID_PRIVATE_KEY` — để loại **Sensitive**, không bao giờ lộ ra ngoài
+   - `VAPID_SUBJECT` — `mailto:` hoặc URL `https:` của bản deploy
+
+   `npm run vercel:env` xuất cả ba vào `vercel-env.txt` kèm kiểm tra hình dạng.
+
+3. Trên từng thiết bị: mở app bằng **Safari** → nút **Chia sẻ** → **Thêm vào Màn hình
+   chính** → mở KidChore từ biểu tượng vừa thêm → bấm **Bật thông báo**.
+
+Ba điều đáng biết trước, vì chúng không phải lỗi:
+
+- **Phải cài vào Màn hình chính.** Safari chỉ cho web app đã thêm vào Màn hình chính
+  nhận thông báo; trong tab Safari thì không có cách nào. Trang sẽ tự hướng dẫn khi
+  phát hiện đang mở trên iPhone/iPad mà chưa cài.
+- **Cần iOS/iPadOS 18.4 trở lên.** Từ đó Safari hiển thị được thông báo mà không cần
+  service worker (Declarative Web Push), nên app cố ý không có service worker. Trên
+  16.4–18.3 thông báo sẽ được nhận nhưng không hiện.
+- **Xoá app khỏi Màn hình chính là mất đăng ký.** Mở lại app và bật lại là xong.
+
 ## Chức năng đã có
 
 - Bố/mẹ: tổng quan, duyệt bài kèm ảnh bằng chứng, quản lý việc nhà (CRUD, lịch lặp
   lại, giao theo bé hoặc cả nhà), kho phần thưởng, duyệt đổi thưởng, quản lý tài
-  khoản các bé (tạo, đổi PIN, đổi tên, cộng/trừ điểm thủ công có ghi log)
-- Bé: xem việc hôm nay, nộp bài, xem điểm, đổi quà
+  khoản các bé (tạo, đổi PIN, đổi tên, cộng/trừ điểm thủ công có ghi log), thưởng
+  nhanh và phạt nhanh một chạm kèm hoàn tác, báo cáo 7/30/90 ngày
+- Bé: xem việc hôm nay, nộp bài kèm ảnh, xem điểm, đổi quà, xem huy hiệu và chuỗi ngày
+- Điểm âm: bé tiêu hết điểm vẫn bị phạt, phần âm là "điểm nợ" hiển thị rõ và phải làm
+  việc để trả
+- Thông báo đẩy theo sự kiện (nộp bài, duyệt, thưởng/phạt điểm, đổi quà)
 - PWA: cài được lên màn hình chính, có icon và theme
 
 ## Chưa có
 
-- Ảnh bằng chứng: cột `proof_image_url` và giao diện hiển thị đã có, nhưng chưa có
-  phần upload/nén ảnh ở client.
-- Báo cáo/biểu đồ theo tuần, tháng và chuỗi ngày (streak).
-- Badge/huy hiệu cho bé.
-- Thông báo real-time khi bé nộp bài.
+- Nhắc theo lịch (ví dụ 19:00 nhắc bé chưa làm bài). Thông báo hiện tại chỉ theo sự
+  kiện; muốn theo lịch thì cần một cron, và gói Vercel Hobby giới hạn tần suất cron.
+- Sàn cho điểm nợ: hiện không giới hạn, bé có thể âm bao nhiêu cũng được.
+

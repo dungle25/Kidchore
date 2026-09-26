@@ -31,6 +31,16 @@ const REQUIRED = [
 // for no benefit.
 const NOT_NEEDED = ["DATABASE_URL"];
 
+/**
+ * Needed only for push notifications.
+ *
+ * Kept separate from the four above because the app runs perfectly well without them:
+ * `hasPushConfig()` returns false and the "enable notifications" card hides itself. So
+ * a deployment missing these is not broken, it simply cannot notify anybody, and this
+ * script must not report that as a problem.
+ */
+const PUSH = ["NEXT_PUBLIC_VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"];
+
 let problems = 0;
 const lines = [
   "# KidChore — environment variables for Vercel",
@@ -73,6 +83,31 @@ lines.push(
   "# Not needed: DATABASE_URL. It is only used by scripts/migrate.mjs.",
   ""
 );
+
+console.log("\nFor push notifications (optional — without them the app runs, it just cannot notify):");
+lines.push("# --- Push notifications -------------------------------------------------", "");
+for (const key of PUSH) {
+  const value = env[key];
+  if (!value) {
+    console.log(`  MISSING  ${key}`);
+    lines.push(`# ${key} is not set locally; see .env.example.`, "");
+    continue;
+  }
+
+  let verdict = "ok";
+  if (key === "NEXT_PUBLIC_VAPID_PUBLIC_KEY") {
+    // An uncompressed P-256 point in base64url: 65 bytes, so 87 characters, starting
+    // with 0x04 which encodes as a leading "B".
+    verdict = value.length === 87 && value.startsWith("B") ? "ok" : "unexpected key shape";
+  } else if (key === "VAPID_PRIVATE_KEY") {
+    verdict = value.length === 43 ? "ok" : "unexpected key shape";
+  } else if (key === "VAPID_SUBJECT") {
+    verdict = /^(mailto:|https:\/\/)/.test(value) ? "ok" : "must be mailto: or https://";
+  }
+
+  console.log(`  ${verdict.padEnd(22)} ${key}`);
+  lines.push(`${key}=${value}`, "");
+}
 
 writeFileSync("vercel-env.txt", lines.join("\n"), "utf8");
 console.log("\nWrote vercel-env.txt (gitignored).");
