@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import KidNav from "@/components/kid/kid-nav";
+import SessionKeepAlive from "@/components/session-keep-alive";
 
 export const metadata: Metadata = {
   title: "Bé — KidChore",
@@ -14,6 +15,7 @@ export const metadata: Metadata = {
 export default function KidLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-dvh bg-gradient-to-b from-violet-50 to-slate-50">
+      <SessionKeepAlive />
       <main className="mx-auto max-w-3xl px-4 pb-28 pt-6">{children}</main>
       <KidNav />
     </div>

@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { SESSION_TTL_SECONDS } from "./auth-constants";
+import { SESSION_COOKIE, SESSION_TTL_SECONDS } from "./auth-constants";
 import { getJwtSecret } from "./env";
 
 /**
@@ -26,6 +26,13 @@ export interface SessionPayload {
 
 const ISSUER = "supabase";
 const AUDIENCE = "authenticated";
+
+/**
+ * Renew a session once fewer than this many seconds remain. Seven days means a
+ * family that opens the app even once a week stays signed in indefinitely, while a
+ * session that is genuinely abandoned still expires.
+ */
+export const RENEWAL_THRESHOLD_SECONDS = 60 * 60 * 24 * 7;
 
 function base64UrlEncode(input: string): string {
   return Buffer.from(input, "utf8").toString("base64url");
@@ -114,4 +121,75 @@ export function sessionCookieOptions(maxAge = SESSION_TTL_SECONDS) {
     path: "/",
     maxAge,
   };
+}
+
+/**
+ * The same cookie as a `Set-Cookie` header value.
+ *
+ * Route handlers that build a Response by hand cannot use the `cookies()` helper, so
+ * they need the serialized form. Deriving it from `sessionCookieOptions` keeps the
+ * two representations from drifting apart.
+ */
+export function sessionCookieHeader(token: string, maxAge = SESSION_TTL_SECONDS): string {
+  const options = sessionCookieOptions(maxAge);
+  return [
+    `${SESSION_COOKIE}=${token}`,
+    `Path=${options.path}`,
+    `Max-Age=${options.maxAge}`,
+    options.httpOnly ? "HttpOnly" : "",
+    `SameSite=${options.sameSite === "lax" ? "Lax" : options.sameSite}`,
+    options.secure ? "Secure" : "",
+  ]
+    .filter(Boolean)
+    .join("; ");
+}
+
+/** Clears the session cookie. */
+export function clearedSessionCookieHeader(): string {
+  return [
+    `${SESSION_COOKIE}=`,
+    "Path=/",
+    "Max-Age=0",
+    "HttpOnly",
+    "SameSite=Lax",
+    process.env.NODE_ENV === "production" ? "Secure" : "",
+  ]
+    .filter(Boolean)
+    .join("; ");
+}
+
+/**
+ * How long until the token expires, in seconds. Negative when already expired.
+ *
+ * Used to decide whether a session should be extended. Returned separately from
+ * `verifySessionToken` so the common path (a token with plenty of life left) does not
+ * pay for parsing the claims twice.
+ */
+export function sessionSecondsRemaining(token: string | undefined): number {
+  const payload = verifySessionToken(token);
+  if (!payload) return -1;
+
+  const claims = JSON.parse(
+    Buffer.from(token!.split(".")[1], "base64url").toString("utf8")
+  ) as { exp?: number };
+
+  if (!claims.exp) return -1;
+  return claims.exp - Math.floor(Date.now() / 1000);
+}
+
+/**
+ * Renew a session once it is close to expiring, so a family that uses the app
+ * regularly is never logged out.
+ *
+ * Without this, a 30-day cookie expires on day 30 regardless of activity: a child
+ * would be asked for their PIN again and a parent would have to sign in with
+ * Google, purely because time passed. Renewing on activity turns the fixed window
+ * into a sliding one.
+ *
+ * Only tokens that are still valid are renewed; an expired token is left alone so
+ * the request is redirected to sign-in instead of being silently resurrected.
+ */
+export function shouldRenewSession(token: string | undefined): boolean {
+  const remaining = sessionSecondsRemaining(token);
+  return remaining > 0 && remaining < RENEWAL_THRESHOLD_SECONDS;
 }

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { requireParentPage, callRpc } from "@/lib/dal";
 import type { ParentOverview } from "@/lib/domain";
 import ParentNav from "@/components/parent/parent-nav";
+import SessionKeepAlive from "@/components/session-keep-alive";
 
 export const metadata: Metadata = {
   title: "Bố/mẹ — KidChore",
@@ -31,6 +32,7 @@ export default async function ParentLayout({
 
   return (
     <div className="flex min-h-dvh bg-slate-100">
+      <SessionKeepAlive />
       <ParentNav familyName={familyName} />
       <main className="flex-1 overflow-y-auto px-4 pb-24 pt-5 md:px-8 md:pb-8">
         {children}

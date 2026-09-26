@@ -33,7 +33,7 @@ const secret = env.SUPABASE_JWT_SECRET;
 const SESSION_COOKIE = "kidchore_session";
 
 /** Signs a session token the same way lib/session.ts does. */
-function mintToken(sub, role, name) {
+function mintToken(sub, role, name, ttlSeconds = 3600) {
   const now = Math.floor(Date.now() / 1000);
   const b64 = (o) => Buffer.from(JSON.stringify(o), "utf8").toString("base64url");
   const input = `${b64({ alg: "HS256", typ: "JWT" })}.${b64({
@@ -42,12 +42,33 @@ function mintToken(sub, role, name) {
     role: "authenticated",
     aud: "authenticated",
     iat: now,
-    exp: now + 3600,
+    exp: now + ttlSeconds,
     app_role: role,
     app_name: name,
   })}`;
   const sig = createHmac("sha256", secret).update(input).digest("base64url");
   return `${input}.${sig}`;
+}
+
+const DAY = 60 * 60 * 24;
+
+/** Reads the session cookie a response asks the browser to store. */
+function readSessionCookie(res) {
+  const cookies = res.headers.getSetCookie?.() ?? [];
+  for (const cookie of cookies) {
+    if (cookie.startsWith(`${SESSION_COOKIE}=`)) {
+      return {
+        value: cookie.slice(SESSION_COOKIE.length + 1).split(";")[0],
+        raw: cookie,
+      };
+    }
+  }
+  return null;
+}
+
+/** Reads the expiry claim from a token without verifying it. */
+function tokenExpiry(token) {
+  return JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString()).exp;
 }
 
 let pass = 0;
@@ -70,7 +91,15 @@ async function get(pathname, token) {
   if (token) headers.Cookie = `${SESSION_COOKIE}=${token}`;
   const res = await fetch(`${base}${pathname}`, { headers, redirect: "manual" });
   const body = res.status === 200 ? await res.text() : "";
-  return { status: res.status, location: res.headers.get("location"), body };
+  const setCookies = res.headers.getSetCookie?.() ?? [];
+  return {
+    status: res.status,
+    location: res.headers.get("location"),
+    body,
+    sessionCookie: readSessionCookie(res),
+    // Kept for diagnostics: shows exactly what the server asked the browser to store.
+    allSetCookies: setCookies,
+  };
 }
 
 const db = new pg.Client({
@@ -309,6 +338,92 @@ try {
   );
 
   await db.query("delete from public.families where id = $1", [otherFam.rows[0].id]);
+
+  // ---- 7. Sliding session renewal ----
+  // A 30-day cookie that never renews signs the whole family out on day 30 even if
+  // they use the app daily. Renewal lives in a route handler because the proxy cannot
+  // both set a cookie and render a page (see app/api/auth/keepalive/route.ts).
+  console.log("\n7. Sliding session renewal");
+
+  /** Calls the renewal endpoint the way the client component does. */
+  async function keepalive(token) {
+    const res = await fetch(`${base}/api/auth/keepalive`, {
+      headers: token ? { Cookie: `${SESSION_COOKIE}=${token}` } : {},
+      redirect: "manual",
+    });
+    const cookies = res.headers.getSetCookie?.() ?? [];
+    const session = cookies.find((c) => c.startsWith(`${SESSION_COOKIE}=`));
+    return {
+      status: res.status,
+      cookie: session
+        ? { value: session.slice(SESSION_COOKIE.length + 1).split(";")[0], raw: session }
+        : null,
+    };
+  }
+
+  const freshToken = mintToken(AUTH_PARENT, "PARENT", "E2E Phụ Huynh", 20 * DAY);
+  const freshRes = await keepalive(freshToken);
+  check(
+    "a session with 20 days left is NOT reissued",
+    freshRes.status === 204 && freshRes.cookie === null,
+    `status=${freshRes.status} setCookie=${freshRes.cookie?.raw ?? "none"}`
+  );
+
+  const expiringToken = mintToken(AUTH_PARENT, "PARENT", "E2E Phụ Huynh", 2 * DAY);
+  const expiringRes = await keepalive(expiringToken);
+  if (!expiringRes.cookie) {
+    console.log(`    [debug] keepalive status=${expiringRes.status}, no session cookie returned`);
+  }
+  check(
+    "a session with 2 days left IS reissued",
+    expiringRes.status === 204 && expiringRes.cookie !== null,
+    `status=${expiringRes.status} setCookie=${expiringRes.cookie?.raw ?? "none"}`
+  );
+
+  if (expiringRes.cookie) {
+    const before = tokenExpiry(expiringToken);
+    const after = tokenExpiry(expiringRes.cookie.value);
+    check(
+      "the renewed token expires later than the one it replaces",
+      after > before,
+      `before=${new Date(before * 1000).toISOString()} after=${new Date(after * 1000).toISOString()}`
+    );
+    check(
+      "the renewed token extends to roughly a full session lifetime",
+      after > Math.floor(Date.now() / 1000) + 29 * DAY,
+      `after=${new Date(after * 1000).toISOString()}`
+    );
+    check(
+      "the renewed cookie is HttpOnly, SameSite=Lax and long-lived",
+      /HttpOnly/i.test(expiringRes.cookie.raw) &&
+        /SameSite=Lax/i.test(expiringRes.cookie.raw) &&
+        /Max-Age=2592000/.test(expiringRes.cookie.raw),
+      expiringRes.cookie.raw
+    );
+
+    // The refreshed token must actually work, not merely be well-formed.
+    const followUp = await get("/parent/dashboard", expiringRes.cookie.value);
+    check(
+      "the refreshed session is accepted on the next request",
+      followUp.status === 200 && followUp.body.includes("E2E Phụ Huynh"),
+      `status=${followUp.status}`
+    );
+  }
+
+  const expiredToken = mintToken(AUTH_PARENT, "PARENT", "E2E Phụ Huynh", -DAY);
+  const expiredRes = await get("/parent/dashboard", expiredToken);
+  check(
+    "an already-expired session is NOT resurrected",
+    expiredRes.status === 307 && (expiredRes.location ?? "").startsWith("/login"),
+    `status=${expiredRes.status} location=${expiredRes.location}`
+  );
+
+  const anonKeepalive = await keepalive(null);
+  check(
+    "keepalive hands nothing to an anonymous caller",
+    anonKeepalive.status === 204 && anonKeepalive.cookie === null,
+    `status=${anonKeepalive.status} setCookie=${anonKeepalive.cookie?.raw ?? "none"}`
+  );
 } finally {
   // Collect linked auth identities BEFORE deleting the families: users.auth_user_id
   // is `on delete set null`, so afterwards the link is gone and the auth rows would
