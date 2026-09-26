@@ -61,7 +61,12 @@ export default function GoogleLoginButton() {
     <div className="space-y-3">
       <button
         type="button"
-        onClick={startGoogleLogin}
+        onClick={() => {
+          // The handler catches everything internally, so there is nothing to await
+          // and nothing that can reject; the `void` is what stops React from being
+          // handed a promise it will ignore.
+          void startGoogleLogin();
+        }}
         disabled={pending}
         className="flex w-full items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white px-4 py-3 font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"
       >
