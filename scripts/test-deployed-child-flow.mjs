@@ -12,6 +12,7 @@
 import { readFileSync } from "node:fs";
 import { createHmac } from "node:crypto";
 import pg from "pg";
+import { makeIdentityGuard } from "./lib/test-cleanup.mjs";
 
 const base = process.argv[2] ?? "https://kidchore-omega.vercel.app";
 
@@ -90,6 +91,9 @@ const db = new pg.Client({
   ssl: { rejectUnauthorized: false },
 });
 await db.connect();
+
+/** Snapshot taken before anything is created, so cleanup can spare existing identities. */
+const guard = await makeIdentityGuard(db);
 
 const AUTH_PARENT = "77777777-7777-4777-8777-777777777777";
 const TEST_FAMILY = "__CHILD_FLOW__";
@@ -252,14 +256,15 @@ try {
   await db
     .query("delete from public.families where family_name = $1", [TEST_FAMILY])
     .catch(() => {});
-  // Identities provisioned for the test child carry the generated local address.
-  await db
-    .query("delete from auth.users where email like '%@kidchore.local'")
-    .catch(() => {});
+  // Remove only the identities this run created. Deleting every `@kidchore.local`
+  // address would also delete the ones belonging to real children, because
+  // `create_child` generates identities with exactly that address shape. That mistake
+  // was made once and it locked a real child out of their account.
+  const removed = await guard.removeCreated();
   await db.query("delete from auth.identities where user_id = $1", [AUTH_PARENT]).catch(() => {});
   await db.query("delete from auth.users where id = $1", [AUTH_PARENT]).catch(() => {});
   await db.end();
-  console.log("\nChild-flow fixtures removed.");
+  console.log(`\nChild-flow fixtures removed (${removed} identity/identities).`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

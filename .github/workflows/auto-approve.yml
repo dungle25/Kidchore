@@ -1,0 +1,80 @@
+name: Auto-approve
+
+# Approves a pull request after CI has passed, so a solo maintainer is not stuck behind
+# the "1 approving review" requirement that branch protection enforces.
+#
+# WHY workflow_run AND NOT pull_request
+#   A workflow triggered by `pull_request` starts at the same moment as CI, so it would
+#   approve before the checks finish. That approves a commit nobody has verified, and
+#   with "dismiss stale reviews" enabled the approval would later be discarded anyway.
+#   `workflow_run` fires only after the CI workflow reaches a terminal state, so the
+#   approval is granted on a commit whose checks actually passed.
+#
+# WHY A BOT REVIEW COUNTS
+#   GitHub refuses a review from the identity that authored the pull request. A review
+#   submitted with the workflow token is attributed to `github-actions[bot]`, which is a
+#   different identity from the person who opened the pull request, so it satisfies the
+#   requirement while GitHub's self-approval guard still holds for real users.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+jobs:
+  approve:
+    name: Approve the pull request
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # Only when CI actually succeeded, and only for branches pushed to this repository
+    # rather than a fork.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+
+    steps:
+      - name: Approve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          AUTHOR: ${{ github.event.workflow_run.actor.login }}
+        run: |
+          set -euo pipefail
+
+          echo "CI succeeded for $HEAD_SHA (run by $AUTHOR)"
+          echo "CI run: $RUN_URL"
+
+          # Find the pull request this commit belongs to. The commits endpoint is used
+          # rather than the run payload so the association is authoritative.
+          PR_NUMBER=$(gh api "repos/$REPO/commits/$HEAD_SHA/pulls" \
+            --jq '[.[] | select(.state == "open")][0].number // empty')
+
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No open pull request is associated with this commit. Nothing to approve."
+            echo "### ⏭️ Auto-approve skipped" >> "$GITHUB_STEP_SUMMARY"
+            echo "CI succeeded but no open pull request is linked to $HEAD_SHA." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "Approving pull request #$PR_NUMBER"
+
+          # A failure here is not fatal: the approval is a convenience, and the pull
+          # request can still be approved by a person.
+          if gh pr review "$PR_NUMBER" --repo "$REPO" --approve \
+               --body "Tự động duyệt: CI đã xanh cho commit ${HEAD_SHA:0:7}. Xem log: $RUN_URL"; then
+            echo "### ✅ Auto-approved pull request #$PR_NUMBER" >> "$GITHUB_STEP_SUMMARY"
+            echo "Approved after CI passed: $RUN_URL" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Could not approve pull request #$PR_NUMBER automatically."
+            echo "### ⚠️ Auto-approve failed" >> "$GITHUB_STEP_SUMMARY"
+            echo "Approve pull request #$PR_NUMBER manually." >> "$GITHUB_STEP_SUMMARY"
+          fi

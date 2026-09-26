@@ -10,6 +10,7 @@ import {
   formatPoints,
 } from "@/components/ui";
 import GenerateTodayButton from "./generate-today-button";
+import ChildCard from "./child-card";
 
 export const metadata = { title: "Tổng quan — KidChore" };
 
@@ -102,33 +103,7 @@ export default async function ParentDashboardPage() {
       ) : (
         <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {children.map((child) => (
-            <div
-              key={child.id}
-              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-            >
-              <div className="flex items-center justify-between">
-                <p className="font-semibold text-slate-800">{child.display_name}</p>
-                <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-800">
-                  {child.points_balance} điểm
-                </span>
-              </div>
-              <p className="mt-2 text-xs text-slate-500">
-                Đã hoàn thành {child.approved_total} việc
-                {child.pending_review > 0 && (
-                  <>
-                    {" · "}
-                    <span className="font-medium text-blue-600">
-                      {child.pending_review} chờ duyệt
-                    </span>
-                  </>
-                )}
-              </p>
-              {!child.can_sign_in && (
-                <p className="mt-2 text-xs font-medium text-amber-700">
-                  ⚠️ Bé chưa đăng nhập được — vào mục Gia đình để sửa.
-                </p>
-              )}
-            </div>
+            <ChildCard key={child.id} child={child} />
           ))}
         </section>
       )}

@@ -13,6 +13,7 @@
 import { readFileSync } from "node:fs";
 import { createHmac } from "node:crypto";
 import pg from "pg";
+import { makeIdentityGuard } from "./lib/test-cleanup.mjs";
 
 const base = process.argv[2] ?? "https://kidchore-omega.vercel.app";
 
@@ -72,6 +73,9 @@ const db = new pg.Client({
 });
 await db.connect();
 
+/** Snapshot taken before anything is created, so cleanup can spare existing identities. */
+const guard = await makeIdentityGuard(db);
+
 const AUTH_PARENT = "55555555-5555-4555-8555-555555555555";
 const AUTH_CHILD = "66666666-6666-4666-8666-666666666666";
 const createdFamilies = [];
@@ -121,7 +125,7 @@ try {
      values ($1, 'PARENT', 'Prod Phụ Huynh', 'prod.e2e.parent@example.com', $2) returning id`,
     [fam.rows[0].id, AUTH_PARENT]
   );
-  const parentId = parent.rows[0].id;
+  check("the test parent profile was created", Boolean(parent.rows[0]?.id));
 
   const child = await db.query(
     `insert into public.users (family_id, role, display_name, username, auth_user_id, pin_code)
@@ -282,9 +286,12 @@ try {
     await db.query("delete from auth.identities where user_id = $1", [id]).catch(() => {});
     await db.query("delete from auth.users where id = $1", [id]).catch(() => {});
   }
-  await db.query("delete from auth.users where email like '%@kidchore.local'").catch(() => {});
+  // Only identities created during this run. Deleting every `@kidchore.local` row would
+  // also remove identities belonging to real children, since create_child generates the
+  // same address shape; that mistake once locked a real child out of their account.
+  const removed = await guard.removeCreated();
   await db.end();
-  console.log("\nProduction test fixtures removed.");
+  console.log(`\nProduction test fixtures removed (${removed} identity/identities).`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

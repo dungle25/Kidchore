@@ -76,8 +76,12 @@ if (projectUrl && anonKey) {
   const res = await fetch(`${projectUrl}/auth/v1/settings`, { headers: { apikey: anonKey } });
   const settings = await res.json();
   googleEnabled = settings.external?.google === true;
-  googleEnabled ? ok("google provider is ENABLED") : bad("google provider is NOT enabled");
-  if (!googleEnabled) failures.push("google provider disabled");
+  if (googleEnabled) {
+    ok("google provider is ENABLED");
+  } else {
+    bad("google provider is NOT enabled");
+    failures.push("google provider disabled");
+  }
 }
 
 // ---------- 3 & 4. Does Supabase accept the redirect and reach Google? ----------
