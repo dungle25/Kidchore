@@ -223,10 +223,13 @@ Ba điều đáng biết trước, vì chúng không phải lỗi:
 ## Chức năng đã có
 
 - Bố/mẹ: tổng quan, duyệt bài kèm ảnh bằng chứng, quản lý việc nhà (CRUD, lịch lặp
-  lại, giao theo bé hoặc cả nhà), kho phần thưởng, duyệt đổi thưởng, quản lý tài
-  khoản các bé (tạo, đổi PIN, đổi tên, cộng/trừ điểm thủ công có ghi log), thưởng
-  nhanh và phạt nhanh một chạm kèm hoàn tác, báo cáo 7/30/90 ngày
-- Bé: xem việc hôm nay, nộp bài kèm ảnh, xem điểm, đổi quà, xem huy hiệu và chuỗi ngày
+  lại, giao theo bé hoặc cả nhà), **thêm nhanh cả danh sách việc thường làm** (đánh
+  răng, phơi đồ, dọn đồ chơi… kèm điểm và tick "cần ảnh" cho từng việc), kho phần
+  thưởng, duyệt đổi thưởng, quản lý tài khoản các bé (tạo, đổi PIN, đổi tên, cộng/trừ
+  điểm thủ công có ghi log), thưởng nhanh và phạt nhanh một chạm kèm hoàn tác, báo cáo
+  7/30/90 ngày
+- Bé: xem việc hôm nay **gom theo Chưa làm / Chờ bố/mẹ duyệt / Đã xong**, nộp bài (việc
+  không cần ảnh chỉ một chạm), xem điểm, đổi quà, xem huy hiệu và chuỗi ngày
 - Điểm âm: bé tiêu hết điểm vẫn bị phạt, phần âm là "điểm nợ" hiển thị rõ và phải làm
   việc để trả
 - Thông báo đẩy theo sự kiện (nộp bài, duyệt, thưởng/phạt điểm, đổi quà)
