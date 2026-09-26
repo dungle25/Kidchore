@@ -44,6 +44,11 @@ const unitSuites = [
     needsDb: false,
   },
   {
+    name: "Approval grouping",
+    script: "scripts/test-approval-groups.mjs",
+    needsDb: false,
+  },
+  {
     // Runs in the job that has no secrets, which is exactly where a check for
     // credentials committed by mistake belongs.
     name: "No committed credentials",
