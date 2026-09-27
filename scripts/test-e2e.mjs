@@ -21,6 +21,7 @@ import { formatInviteCode } from "../lib/invite-code.ts";
 // Builds and starts the app, and waits until it answers. Shared with the browser UI
 // suite so both bring the app up the same way; see scripts/lib/app-server.mjs.
 import { ensureServer } from "./lib/app-server.mjs";
+import { sslForDatabase } from "./lib/database-ssl.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -200,7 +201,7 @@ async function get(pathname, token) {
 
 const db = new pg.Client({
   connectionString: env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: sslForDatabase(env.DATABASE_URL),
 });
 await db.connect();
 

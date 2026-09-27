@@ -18,6 +18,7 @@
  */
 import { readFileSync } from "node:fs";
 import pg from "pg";
+import { sslForDatabase } from "./lib/database-ssl.mjs";
 
 const base = process.argv[2] ?? "https://kidchore-omega.vercel.app";
 
@@ -54,7 +55,7 @@ function childrenOn(html) {
 
 const db = new pg.Client({
   connectionString: env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: sslForDatabase(env.DATABASE_URL),
 });
 await db.connect();
 

@@ -9,6 +9,7 @@
  */
 import { readFileSync } from "node:fs";
 import { createHmac } from "node:crypto";
+import { sslForDatabase } from "./database-ssl.mjs";
 
 /** The app's own session cookie. */
 export const SESSION_COOKIE = "kidchore_session";
@@ -81,7 +82,7 @@ export async function loadPeople(env) {
   const { default: pg } = await import("pg");
   const db = new pg.Client({
     connectionString: env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: sslForDatabase(env.DATABASE_URL),
   });
   await db.connect();
 

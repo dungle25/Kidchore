@@ -9,6 +9,7 @@
  */
 import { readFileSync } from "node:fs";
 import pg from "pg";
+import { sslForDatabase } from "./lib/database-ssl.mjs";
 
 const env = Object.fromEntries(
   readFileSync(".env.local", "utf8")
@@ -22,7 +23,7 @@ const env = Object.fromEntries(
 
 const db = new pg.Client({
   connectionString: env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: sslForDatabase(env.DATABASE_URL),
 });
 await db.connect();
 

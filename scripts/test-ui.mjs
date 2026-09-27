@@ -40,6 +40,7 @@ import {
   mintToken,
 } from "./lib/design-capture.mjs";
 import { ensureServer, root } from "./lib/app-server.mjs";
+import { sslForDatabase } from "./lib/database-ssl.mjs";
 
 const args = process.argv.slice(2);
 const startServer = args.includes("--start-server");
@@ -98,7 +99,7 @@ const createdFamilyIds = [];
 
 const dbClient = new pg.Client({
   connectionString: env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: sslForDatabase(env.DATABASE_URL),
 });
 
 /**

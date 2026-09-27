@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import pg from "pg";
 import { makeIdentityGuard } from "./lib/test-cleanup.mjs";
+import { sslForDatabase } from "./lib/database-ssl.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const env = Object.fromEntries(
@@ -89,7 +90,7 @@ function codeOf(data) {
 
 const db = new pg.Client({
   connectionString: env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: sslForDatabase(env.DATABASE_URL),
 });
 await db.connect();
 

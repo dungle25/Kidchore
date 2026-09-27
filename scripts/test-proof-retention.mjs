@@ -27,6 +27,7 @@ import {
   proofObjectPath,
 } from "../lib/proof-retention.ts";
 import { createHmac } from "node:crypto";
+import { sslForDatabase } from "./lib/database-ssl.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -106,7 +107,7 @@ const CHILD_NAME = "Retention Bé";
 
 const db = new pg.Client({
   connectionString: env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: sslForDatabase(env.DATABASE_URL),
 });
 await db.connect();
 
