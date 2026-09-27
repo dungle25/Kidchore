@@ -34,6 +34,14 @@ const unitSuites = [
     needsDb: false,
   },
   {
+    // Runs its assertions under TZ=UTC: the bug it covers - a timestamp formatted in
+    // whatever timezone the code happens to run in - is invisible on a Vietnamese machine,
+    // where the server and the browser would agree by accident.
+    name: "Timestamp formatting",
+    script: "scripts/test-format-date.mjs",
+    needsDb: false,
+  },
+  {
     name: "Suggested chores and quick add",
     script: "scripts/test-suggested-tasks.mjs",
     needsDb: false,

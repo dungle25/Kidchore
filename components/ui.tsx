@@ -118,18 +118,13 @@ export function formatPoints(amount: number): string {
   return `${amount > 0 ? "+" : ""}${amount} điểm`;
 }
 
-/** Formats a timestamp in the family's locale. */
-export function formatDateTime(value: string | null | undefined): string {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString("vi-VN", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+/**
+ * Formats a timestamp in the family's locale and timezone.
+ *
+ * Re-exported rather than reimplemented: the screens import it from here, and the
+ * implementation lives in `lib/format-date.ts` where it can be tested without a browser.
+ */
+export { formatDateTime } from "@/lib/format-date";
 
 /** Human-friendly stock label, honouring -1 as unlimited. */
 export function formatStock(stock: number): string {
