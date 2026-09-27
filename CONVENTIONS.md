@@ -228,6 +228,26 @@ node scripts/test-deployed-profile-switch.mjs https://<domain>
 Bước 5 chỉ có CI, không có approval — xem lý do ngay dưới. Cổng chặn thật là
 `Lint, typecheck and build`, và nó chạy trên **mọi** PR.
 
+### Job integration lấy database từ đâu
+
+Job `Database and HTTP integration tests` chạy toàn bộ `npm run test:all` (database, HTTP và
+giao diện). Nó cần một database thật, và có hai đường:
+
+| | Khi nào | Database |
+| --- | --- | --- |
+| `mode=secrets` | Repo có secret `DATABASE_URL` (và 4 secret còn lại) | Project Supabase dùng riêng cho test |
+| `mode=local` | Không có secret nào — **mặc định hiện tại** | `supabase start` trong Docker, sống và chết cùng runner |
+
+Trước đây chỉ có đường thứ nhất, và vì repo chưa cấu hình secret nên job **bỏ qua chính nó**:
+xanh trong 3 giây, không chạy gì cả, kể cả bộ UI. Đường local là để việc đó không lặp lại —
+xem mục 6.15.
+
+Điểm dễ sai khi sửa job này: **Next.js ưu tiên biến đã có trong process environment hơn giá
+trị cùng khoá trong `.env.local`**. Nên placeholder ở `env:` cấp workflow sẽ lặng lẽ đè lên
+giá trị mà job vừa ghi vào `.env.local`, và triệu chứng là mọi request có session bị trả về
+`/login` — không có dòng log nào chỉ vào nguyên nhân. Placeholder vì thế nằm trong `env:` của
+job `quality`, và đường local ghi giá trị vào **cả** `.env.local` lẫn `$GITHUB_ENV`.
+
 ### Điều kiện merge
 
 - ✅ `Lint, typecheck and build` pass (bắt buộc, cấu hình trong branch protection)
@@ -489,6 +509,28 @@ chứ chưa chắc người dùng nhìn thấy.
 Một hệ quả nữa: nếu tiêu đề nhóm và nhãn trạng thái của thẻ trùng chữ (cả hai đều là
 "Chưa làm"), thì đừng nhắm vào chữ. `kid-task-list.tsx` gắn `data-group="todo"` cho tiêu đề
 để kiểm tra không phải đoán nó vừa tìm thấy cái nào.
+
+### 6.15. Một job CI "xanh" có thể là job không chạy gì
+
+**Đã xảy ra:** job `integration` mở đầu bằng một bước kiểm tra secret. Repo chưa cấu hình
+secret nào, nên nó đặt `configured=false` và **mọi bước sau bị bỏ qua**. Job xanh trong **3
+giây**, và trong suốt thời gian đó không có gì kiểm database, HTTP hay giao diện — kể cả bộ UI
+vừa được thêm vào. Nhìn cột CI thì tưởng mọi thứ đã được kiểm.
+
+Điều đáng ghi lại: workflow **đã cố ý** hành xử như vậy (bỏ qua thay vì fail, để fork và clone
+mới không đỏ oan), và bước đó có ghi `### ⏭️ Integration tests skipped` vào job summary. Cái
+thiếu không phải là sự trung thực của log, mà là **một đường chạy được khi không có secret** —
+và vì không có đường đó, cái đã viết ra không có tác dụng gì.
+
+**Quy tắc:**
+
+- **Đọc thời gian chạy, không chỉ đọc màu.** Một job hoàn thành trong vài giây là job đã bỏ
+  qua phần lớn công việc. So sánh với thời gian chạy thật khi cấu hình đầy đủ.
+- **Đừng để "chưa cấu hình" đồng nghĩa với "không kiểm gì".** Nếu thứ cần là một database, hãy
+  dựng một cái tại chỗ (`supabase start` trong Docker) thay vì bỏ qua. Stack local sống và chết
+  cùng runner, nên nó còn an toàn hơn cho dữ liệu.
+- **Kiểm tra rằng cổng chặn thật sự chặn:** làm đỏ một thứ trong giao diện và xem PR có đỏ
+  không. Nếu PR vẫn xanh thì cổng đó chỉ là trang trí.
 
 ---
 
