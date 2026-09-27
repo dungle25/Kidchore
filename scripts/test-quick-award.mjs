@@ -17,6 +17,7 @@ import { readFileSync } from "node:fs";
 import { createHmac } from "node:crypto";
 import pg from "pg";
 import { makeIdentityGuard } from "./lib/test-cleanup.mjs";
+import { sslForDatabase } from "./lib/database-ssl.mjs";
 
 const env = Object.fromEntries(
   readFileSync(".env.local", "utf8")
@@ -82,7 +83,7 @@ function check(label, ok, detail = "") {
 
 const db = new pg.Client({
   connectionString: env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: sslForDatabase(env.DATABASE_URL),
 });
 await db.connect();
 const guard = await makeIdentityGuard(db);

@@ -18,6 +18,7 @@ import { createHmac } from "node:crypto";
 import pg from "pg";
 import { makeIdentityGuard } from "./lib/test-cleanup.mjs";
 import { AVATAR_CHOICES, DEFAULT_AVATAR, avatarOf, isImageAvatar, isPresetAvatar } from "../lib/avatars.ts";
+import { sslForDatabase } from "./lib/database-ssl.mjs";
 
 const env = Object.fromEntries(
   readFileSync(".env.local", "utf8")
@@ -133,7 +134,7 @@ check("every preset key draws something, never an image", keys.every((k) => avat
 // ---- 3. Who may set one ----
 console.log("\n3. Who may set one");
 
-const db = new pg.Client({ connectionString: env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+const db = new pg.Client({ connectionString: env.DATABASE_URL, ssl: sslForDatabase(env.DATABASE_URL) });
 await db.connect();
 const guard = await makeIdentityGuard(db);
 

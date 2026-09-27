@@ -23,6 +23,7 @@ import path from "node:path";
 import pg from "pg";
 import { createClient } from "@supabase/supabase-js";
 import { PROOF_BUCKET, PROOF_RETENTION_DAYS, proofObjectPath } from "../lib/proof-retention.ts";
+import { sslForDatabase } from "./lib/database-ssl.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -52,7 +53,7 @@ const env = Object.fromEntries(
 
 const db = new pg.Client({
   connectionString: env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: sslForDatabase(env.DATABASE_URL),
 });
 await db.connect();
 

@@ -11,11 +11,12 @@
 // (`integer` where the file says `int`).
 import { readFileSync, readdirSync } from "node:fs";
 import pg from "pg";
+import { sslForDatabase } from "./lib/database-ssl.mjs";
 
 const envText = readFileSync(new URL("../.env.local", import.meta.url), "utf8");
 const url = envText.match(/^DATABASE_URL=(.+)$/m)[1].trim();
 
-const client = new pg.Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
+const client = new pg.Client({ connectionString: url, ssl: sslForDatabase(url) });
 await client.connect();
 
 const dir = new URL("../db/migrations/", import.meta.url);

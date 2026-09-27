@@ -13,6 +13,7 @@
  *   await guard.removeCreated();   // only identities that appeared during the run
  */
 import pg from "pg";
+import { sslForDatabase } from "./database-ssl.mjs";
 
 /** Addresses generated for children by migration 0005. */
 export const GENERATED_CHILD_EMAIL_SUFFIX = "@kidchore.local";
@@ -58,7 +59,7 @@ export async function makeIdentityGuard(db) {
 export async function connect(env) {
   const db = new pg.Client({
     connectionString: env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: sslForDatabase(env.DATABASE_URL),
   });
   await db.connect();
   return db;

@@ -6,6 +6,7 @@
 // CONVENTIONS.md section 2 applies: add a new migration instead of editing an old one.
 import { readFileSync } from "node:fs";
 import pg from "pg";
+import { sslForDatabase } from "./lib/database-ssl.mjs";
 
 const filename = process.argv[2];
 if (!filename) {
@@ -16,7 +17,7 @@ if (!filename) {
 const envText = readFileSync(new URL("../.env.local", import.meta.url), "utf8");
 const url = envText.match(/^DATABASE_URL=(.+)$/m)[1].trim();
 
-const client = new pg.Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
+const client = new pg.Client({ connectionString: url, ssl: sslForDatabase(url) });
 await client.connect();
 const result = await client.query("delete from public._migrations where filename = $1", [
   filename,

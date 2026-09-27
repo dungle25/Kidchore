@@ -11,6 +11,7 @@
  */
 import { readFileSync } from "node:fs";
 import pg from "pg";
+import { sslForDatabase } from "./lib/database-ssl.mjs";
 
 const limit = Number(process.argv[2] ?? 25);
 
@@ -26,7 +27,7 @@ const env = Object.fromEntries(
 
 const db = new pg.Client({
   connectionString: env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: sslForDatabase(env.DATABASE_URL),
 });
 await db.connect();
 

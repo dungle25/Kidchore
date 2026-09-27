@@ -13,6 +13,7 @@ import { readFileSync } from "node:fs";
 import { createHmac } from "node:crypto";
 import pg from "pg";
 import { makeIdentityGuard } from "./lib/test-cleanup.mjs";
+import { sslForDatabase } from "./lib/database-ssl.mjs";
 
 const base = process.argv[2] ?? "https://kidchore-omega.vercel.app";
 
@@ -88,7 +89,7 @@ function check(label, ok, detail = "") {
 
 const db = new pg.Client({
   connectionString: env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: sslForDatabase(env.DATABASE_URL),
 });
 await db.connect();
 

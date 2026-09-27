@@ -23,24 +23,35 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  # Placeholder values so a build can run without secrets.
-  #
-  # The publishable key is public by design; it identifies the project and grants no data
-  # access, because RLS is enabled on every table with no policy for `anon`. These are only
-  # ever used to render and type-check the app, never to read data.
-  NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
-  # Non-empty dummies: the server secret getters validate presence when called, and the
-  # build never calls them because it serves no user request.
-  SUPABASE_JWT_SECRET: ci-placeholder-not-a-real-secret
-  SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-not-a-real-secret
-
 jobs:
   quality:
     name: Lint, typecheck and build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    # Placeholder values so a build can run without secrets.
+    #
+    # Scoped to this job, not the workflow, and that scoping is load-bearing. Next.js
+    # prefers a variable that is already in the process environment over the same key in
+    # `.env.local`, so a workflow-level `SUPABASE_JWT_SECRET` here would follow the
+    # integration job around and quietly win over the value that job wrote into
+    # `.env.local`. It did: the app verified session cookies with
+    # "ci-placeholder-not-a-real-secret" while the suites minted them with the local
+    # stack's secret, so every authenticated request was rejected and the suites reported
+    # a wall of `307 -> /login` that said nothing about the cause.
+    #
+    # `NEXT_PUBLIC_*` is worse than that, because it is inlined into the bundle at build
+    # time: a placeholder there means the built app talks to example.supabase.co forever.
+    env:
+      # The publishable key is public by design; it identifies the project and grants no
+      # data access, because RLS is enabled on every table with no policy for `anon`. These
+      # are only ever used to render and type-check the app, never to read data.
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+      # Non-empty dummies: the server secret getters validate presence when called, and the
+      # build never calls them because it serves no user request.
+      SUPABASE_JWT_SECRET: ci-placeholder-not-a-real-secret
+      SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-not-a-real-secret
 
     steps:
       - name: Checkout
@@ -87,18 +98,24 @@ jobs:
   integration:
     name: Database and HTTP integration tests
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
-    # These suites create and delete rows, so they need a real project. They are skipped
-    # rather than failed when the secrets are absent, which keeps the workflow green on a
-    # fork or a fresh clone while still running wherever it is configured.
+    # These suites create and delete rows and files, and they need a reachable database.
     #
-    # On a pull request they run only when the repository is configured for it. Point the
-    # secrets at a THROWAWAY project: these suites create families, children and files,
-    # and while they clean up after themselves, a failure mid-run can leave rows behind.
-    # Against the family's live database that is a risk worth avoiding.
+    # Two ways to get one, decided in the first step:
+    #   * the five repository secrets, pointing at a THROWAWAY project. Use this if you
+    #     have one: it is closest to production;
+    #   * otherwise a Supabase stack started locally in Docker. This is the default, and it
+    #     is why the suites actually run on every pull request instead of being skipped.
+    #     Before it existed, `configured=false` skipped the whole job, so the checks went
+    #     green having run nothing but lint and the unit suites.
     #
-    # To enable, add these repository secrets:
+    # The secrets path is safer for data, not more correct: the local stack is thrown away
+    # with the runner, so nothing can be left behind in a real project.
+    #
+    # Point the secrets at a project used for nothing else. These suites create families,
+    # children and files, and a failure mid-run can leave rows behind.
+    #
     #   SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SUPABASE_JWT_SECRET,
     #   SUPABASE_SERVICE_ROLE_KEY, DATABASE_URL
     if: >-
@@ -107,39 +124,54 @@ jobs:
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
 
     steps:
-      - name: Check whether integration secrets are configured
-        id: check
+      - name: Decide which database the suites will run against
+        id: target
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           if [ -n "$DATABASE_URL" ]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-            echo "Integration secrets found; the suites will run." >> "$GITHUB_STEP_SUMMARY"
+            echo "mode=secrets" >> "$GITHUB_OUTPUT"
+            echo "Integration secrets found: the suites will run against that project." >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "### ⏭️ Integration tests skipped" >> "$GITHUB_STEP_SUMMARY"
-            echo "Add the DATABASE_URL repository secret (plus the other four) to enable them." >> "$GITHUB_STEP_SUMMARY"
+            echo "mode=local" >> "$GITHUB_OUTPUT"
+            echo "No integration secrets: starting a local Supabase so the suites still run." >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Checkout
-        if: steps.check.outputs.configured == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Node.js
-        if: steps.check.outputs.configured == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
 
       - name: Install dependencies
-        if: steps.check.outputs.configured == 'true'
         run: npm ci
+
+      - name: Install the Supabase CLI
+        if: steps.target.outputs.mode == 'local'
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # Started only when there are no secrets. `-x` leaves out the services the suites
+      # never touch: pulling Studio, the log pipeline, Realtime and Supavisor costs minutes
+      # and buys nothing here.
+      #
+      # Not the family's project, and not a shared one either - the whole stack lives and
+      # dies with the runner, so a suite that fails halfway cannot leave a row or an image
+      # behind in a database somebody actually uses.
+      - name: Start a local Supabase
+        if: steps.target.outputs.mode == 'local'
+        run: |
+          supabase init
+          supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor
 
       # The suites read .env.local, so write it from secrets rather than threading the
       # values through process arguments where they would show up in the logs.
       - name: Write .env.local from secrets
-        if: steps.check.outputs.configured == 'true'
+        if: steps.target.outputs.mode == 'secrets'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
@@ -156,12 +188,44 @@ jobs:
           EOF
           echo "Wrote .env.local from repository secrets."
 
+      # The same five values, read back from the stack that was just started. `ANON_KEY` is
+      # the local publishable key: a JWT rather than an `sb_publishable_...` string, which
+      # `lib/env.ts` accepts - it checks that the value is present, not what it looks like.
+      #
+      # Written twice on purpose: `.env.local` is what the suites read, and `$GITHUB_ENV` is
+      # what the Next.js server the suites start will see. Next prefers a variable already
+      # in the process environment over the same key in `.env.local`, so exporting only the
+      # file would leave the app and the suites able to disagree about the JWT secret - and
+      # the symptom of that is every session cookie being rejected, with nothing in the log
+      # pointing at the cause.
+      #
+      # The local database has no TLS at all, which is why every suite asks
+      # `scripts/lib/database-ssl.mjs` rather than hardcoding `ssl: {...}`.
+      - name: Write .env.local for the local stack
+        if: steps.target.outputs.mode == 'local'
+        run: |
+          supabase status -o env > /tmp/supabase.env
+          set -a; . /tmp/supabase.env; set +a
+          cat > .env.local <<EOF
+          NEXT_PUBLIC_SUPABASE_URL=${API_URL}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${ANON_KEY}
+          SUPABASE_JWT_SECRET=${JWT_SECRET}
+          SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
+          DATABASE_URL=${DB_URL}
+          EOF
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=${API_URL}"
+            echo "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${ANON_KEY}"
+            echo "SUPABASE_JWT_SECRET=${JWT_SECRET}"
+            echo "SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}"
+          } >> "$GITHUB_ENV"
+          echo "Wrote .env.local and the job environment for the local stack at ${API_URL}."
+
       # Proves the migrations apply from scratch, which is what a new deployment relies on.
-      # `npm run test:all --quick` below runs migrations again; that is harmless because
-      # the runner skips files it has already applied, and it also covers the case where
-      # the secrets arrive without this step having run.
+      # `npm run test:all` below runs migrations again; that is harmless because the runner
+      # skips files it has already applied, and it also covers the case where the secrets
+      # arrive without this step having run.
       - name: Verify migrations apply from scratch
-        if: steps.check.outputs.configured == 'true'
         run: npm run db:migrate
 
       # Playwright drives a browser and needs one to exist. This repository installs
@@ -174,7 +238,6 @@ jobs:
       # fails loudly rather than skipping, because a UI suite that silently does not run is
       # worse than no UI suite: it reports a green build that verified nothing.
       - name: Install the browser for the UI suite
-        if: steps.check.outputs.configured == 'true'
         run: npx playwright-core install --with-deps chromium
 
       # One command for every database-backed suite, with a summary table. Each suite is
@@ -182,11 +245,10 @@ jobs:
       # here too: it runs last, it reuses the build the HTTP suite has just made, and it
       # fails this job when a UI change breaks a screen, which is the whole point of it.
       - name: Database and browser suites
-        if: steps.check.outputs.configured == 'true'
         run: npm run test:all
 
       - name: Report the failure, if any
-        if: failure() && steps.check.outputs.configured == 'true'
+        if: failure()
         run: |
           echo "### ❌ A suite failed" >> "$GITHUB_STEP_SUMMARY"
           echo "Reproduce locally with \`npm run test:all\` and read the SUMMARY table above" >> "$GITHUB_STEP_SUMMARY"
@@ -195,5 +257,5 @@ jobs:
       # The HTTP suite starts its own server, so nothing is left listening afterwards.
       # This still runs on failure, to remove rows an interrupted suite may have left.
       - name: Leave the test project clean
-        if: always() && steps.check.outputs.configured == 'true'
+        if: always()
         run: node scripts/cleanup-fixtures.mjs --apply

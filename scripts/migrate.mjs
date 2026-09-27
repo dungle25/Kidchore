@@ -14,6 +14,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import pg from "pg";
+import { sslForDatabase } from "./lib/database-ssl.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -54,9 +55,9 @@ if (files.length === 0) {
 
 const client = new pg.Client({
   connectionString,
-  // Supabase requires TLS; its pooler presents a certificate we pin by CA trust
-  // rather than by hostname, so hostname verification is relaxed here only.
-  ssl: { rejectUnauthorized: false },
+  // Hosted Supabase requires TLS; the local stack CI brings up does not speak it at all.
+  // `sslForDatabase` answers from the URL, so the same script serves both.
+  ssl: sslForDatabase(connectionString),
   application_name: "kidchore-migrate",
 });
 
