@@ -77,6 +77,7 @@ npm run test:db      # 27 kiểm tra luồng nghiệp vụ trên database
 npm run test:storage # 10 kiểm tra upload ảnh bằng chứng
 npm run test:onboarding # 13 kiểm tra luồng tạo gia đình
 npm run test:e2e     # 32 kiểm tra HTTP (cần app đang chạy)
+npm run test:ui      # kiểm tra giao diện bằng trình duyệt thật (cần app đang chạy)
 npm run validate:ci  # kiểm tra cấu hình CI
 ```
 
@@ -105,6 +106,20 @@ Cách chạy test e2e:
 npm run build && npm start   # ở terminal thứ nhất
 npm run test:e2e             # ở terminal thứ hai
 ```
+
+`test:ui` là bộ kiểm tra **giao diện**: nó mở trình duyệt thật (Edge hoặc Chrome có sẵn
+trên máy) rồi đi qua từng màn hình như một người dùng — đăng nhập bằng PIN, bấm nút nộp
+việc, chuyển tab, kiểm tra thanh điều hướng có nằm đúng đáy màn hình và đủ lớn để bấm
+không, và bắt mọi lỗi console. Đây là bộ duy nhất phát hiện được lỗi bố cục hoặc lỗi
+client component: `test:e2e` chỉ đọc HTML nên những lỗi đó không đổi HTML mà nó đọc.
+
+```bash
+npm run test:ui                    # cần app đang chạy
+npm run test:ui -- --start-server  # tự build và tự chạy app
+```
+
+Mỗi lần sửa giao diện thì chạy `npm run test:ui`. CI chạy nó trong `npm run test:all`,
+ngay sau `test:e2e` (xem tài liệu chi tiết ở `docs/UI_TEST_SUITE.md`).
 
 Cả hai bộ test đều tự dọn dữ liệu tạm sau khi chạy.
 

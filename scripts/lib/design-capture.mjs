@@ -107,6 +107,10 @@ export async function loadPeople(env) {
  * `playwright-core` deliberately ships no browser, and downloading Chromium for a handful
  * of captures is a few hundred megabytes for nothing. Both failures are reported
  * together: "neither browser could be started" on its own costs an hour of guessing.
+ *
+ * The bundled Chromium is the last attempt rather than the first, so a developer machine
+ * uses the browser it already has and downloads nothing. CI has no branded browser it can
+ * rely on, so it installs Chromium (`npx playwright-core install chromium`) and lands here.
  */
 export async function launchInstalledBrowser() {
   const { chromium } = await import("playwright-core");
@@ -123,9 +127,18 @@ export async function launchInstalledBrowser() {
     }
   }
 
-  console.error("Neither Edge nor Chrome could be started.");
+  try {
+    const browser = await chromium.launch();
+    return { browser, channel: "chromium" };
+  } catch (error) {
+    errors.push(
+      `chromium: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`
+    );
+  }
+
+  console.error("No browser could be started.");
   for (const line of errors) console.error(`  ${line}`);
-  console.error("\nOr download a browser for Playwright: npx playwright install chromium");
+  console.error("\nOr download a browser for Playwright: npx playwright-core install chromium");
   process.exit(1);
 }
 

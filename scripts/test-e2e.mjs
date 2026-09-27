@@ -18,68 +18,14 @@ import path from "node:path";
 import pg from "pg";
 import { GOOGLE_COOKIE, INVITE_COOKIE, SESSION_COOKIE } from "../lib/auth-constants.ts";
 import { formatInviteCode } from "../lib/invite-code.ts";
+// Builds and starts the app, and waits until it answers. Shared with the browser UI
+// suite so both bring the app up the same way; see scripts/lib/app-server.mjs.
+import { ensureServer } from "./lib/app-server.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const startServer = args.includes("--start-server");
 const base = args.find((a) => a.startsWith("http")) ?? "http://localhost:3000";
-
-/**
- * Runs `next build` then `next start`, and waits until the app answers.
- *
- * The HTTP suite needs a running server, and requiring the caller to start one made it
- * easy to run the suite with nothing listening, which surfaced as a confusing request
- * failure rather than a clear message. `npm run test:all` uses this so every suite can run
- * from one command.
- */
-async function ensureServer() {
-  const { spawn } = await import("node:child_process");
-
-  // Call npx directly rather than going through a shell. Passing arguments to a shell
-  // concatenates them without escaping, which Node warns about, and nothing here needs
-  // shell features.
-  const npx = process.platform === "win32" ? "npx.cmd" : "npx";
-
-  console.log("Building the app for the HTTP suite...");
-  const build = spawn(npx, ["next", "build"], {
-    cwd: root,
-    stdio: "inherit",
-  });
-  const buildCode = await new Promise((resolve) => build.on("exit", resolve));
-  if (buildCode !== 0) {
-    console.error(`Build failed with exit code ${buildCode}.`);
-    process.exit(1);
-  }
-
-  console.log("Starting the server...");
-  const server = spawn(npx, ["next", "start"], {
-    cwd: root,
-    stdio: "inherit",
-  });
-
-  const healthy = await waitForServer();
-  if (!healthy) {
-    server.kill();
-    console.error("The server did not answer in time.");
-    process.exit(1);
-  }
-  console.log("Server is up.\n");
-  return server;
-}
-
-async function waitForServer(timeoutMs = 60_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(`${base}/login`, { redirect: "manual" });
-      if (res.status > 0) return true;
-    } catch {
-      // Not listening yet.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-  return false;
-}
 
 let managedServer = null;
 
@@ -269,7 +215,7 @@ try {
   // With --start-server the suite brings the app up itself, which is what the combined
   // runner uses. Otherwise it expects an app already running and says so plainly.
   if (startServer) {
-    managedServer = await ensureServer();
+    managedServer = await ensureServer({ base });
   }
 
   // Reachability first: a clear message beats a confusing ECONNREFUSED later.
