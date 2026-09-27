@@ -347,7 +347,7 @@ export default function KidTaskList({ tasks }: { tasks: KidTask[] }) {
                         // marks the promise as deliberately not awaited.
                         void onPick(task, event.target.files?.[0]);
                       }}
-                      className="mt-2 block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-violet-700"
+                      className="mt-2 block w-full text-sm text-slate-600 file:mr-3 file:min-h-11 file:rounded-lg file:border-0 file:bg-violet-600 file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-white hover:file:bg-violet-700"
                     />
                     <p className="mt-1 text-xs text-slate-500">
                       {preparing === task.id

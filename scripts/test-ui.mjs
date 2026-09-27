@@ -698,8 +698,53 @@ try {
     await context.close();
   }
 
-  // ---- 8. Signing out ----
-  section("8. Signing out");
+  // ---- 8. Approval controls are big enough to tap ----
+  // The parent's approval queue is the screen that gets used one-handed, standing up, on a
+  // phone - and it is the one where a mis-tap costs something (the wrong child gets paid, or
+  // a chore is rejected by accident). Measured at phone width for that reason, and measured
+  // rather than read from the class list: the point is what the browser actually lays out.
+  section("8. Approval controls on a phone");
+  {
+    const { context, errors } = await newContext({ viewport: PHONE, token: parentToken });
+    const page = await context.newPage();
+
+    await visit(page, "/parent/chores");
+
+    const approveBox = await page
+      .getByRole("button", { name: "Duyệt & cộng điểm" })
+      .first()
+      .boundingBox();
+    check(
+      "the approve button is at least 44px tall",
+      Boolean(approveBox) && approveBox.height >= 44,
+      approveBox ? `height=${Math.round(approveBox.height)}` : "no box"
+    );
+
+    const rejectBox = await page.getByRole("button", { name: "Từ chối" }).first().boundingBox();
+    check(
+      "the reject button is at least 44px tall",
+      Boolean(rejectBox) && rejectBox.height >= 44,
+      rejectBox ? `height=${Math.round(rejectBox.height)}` : "no box"
+    );
+
+    // The reason a parent types is as important as the button they press, and on a phone a
+    // short field is what makes typing a rejection reason unpleasant.
+    const reasonBox = await page
+      .getByLabel(`Lý do từ chối ${TASK_SUBMITTED}`)
+      .first()
+      .boundingBox();
+    check(
+      "the rejection reason field is at least 44px tall",
+      Boolean(reasonBox) && reasonBox.height >= 44,
+      reasonBox ? `height=${Math.round(reasonBox.height)}` : "no box"
+    );
+
+    check("the approvals screen logs no browser errors", errors.length === 0, errors.join(" | "));
+    await context.close();
+  }
+
+  // ---- 9. Signing out ----
+  section("9. Signing out");
   {
     const { context, errors } = await newContext({ viewport: PHONE, token: childToken });
     const page = await context.newPage();
