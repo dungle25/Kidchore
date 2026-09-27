@@ -99,6 +99,16 @@ const databaseSuites = [
     extraArgs: ["--start-server"],
     skipWhenQuick: true,
   },
+  {
+    // Last, and after the suite above: it drives a real browser through the screens a
+    // person uses, which is the only thing that catches a layout or client-component
+    // regression. `--reuse-build` is safe here because the HTTP suite has just built the
+    // app in this same run, and a second full build would only add minutes.
+    name: "UI regression (browser)",
+    script: "scripts/test-ui.mjs",
+    extraArgs: ["--start-server", "--reuse-build"],
+    skipWhenQuick: true,
+  },
 ];
 
 // Only the database suites need a real project. `--no-db` is meant to run in the CI job

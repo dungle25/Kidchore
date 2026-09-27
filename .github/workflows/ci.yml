@@ -164,9 +164,24 @@ jobs:
         if: steps.check.outputs.configured == 'true'
         run: npm run db:migrate
 
+      # Playwright drives a browser and needs one to exist. This repository installs
+      # `playwright-core`, which deliberately downloads no browser of its own and whose
+      # CLI is `playwright-core` - not `playwright`, which would be a second copy of the
+      # library at a version that need not match this one. Locally the UI suite uses the
+      # Edge or Chrome already on the machine and nothing is downloaded here at all.
+      #
+      # Without this step the UI suite fails on a runner with no branded browser - and it
+      # fails loudly rather than skipping, because a UI suite that silently does not run is
+      # worse than no UI suite: it reports a green build that verified nothing.
+      - name: Install the browser for the UI suite
+        if: steps.check.outputs.configured == 'true'
+        run: npx playwright-core install --with-deps chromium
+
       # One command for every database-backed suite, with a summary table. Each suite is
-      # still runnable on its own while working on one area.
-      - name: Database suites
+      # still runnable on its own while working on one area. The browser UI suite is in
+      # here too: it runs last, it reuses the build the HTTP suite has just made, and it
+      # fails this job when a UI change breaks a screen, which is the whole point of it.
+      - name: Database and browser suites
         if: steps.check.outputs.configured == 'true'
         run: npm run test:all
 

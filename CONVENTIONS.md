@@ -190,6 +190,7 @@ dự án này, cấu hình trông đúng nhưng hành vi sai.
 | `npm run test:avatars` | database | Ảnh đại diện của bé: giá trị nào được nhận, ai được đặt, và `create_child` còn nguyên hành vi cũ |
 | `npm run test:invites` | database | Mời bố/mẹ thứ hai: mọi trường hợp phải bị từ chối, và quyền của người được mời |
 | `npm run test:e2e` | app đang chạy | Kiểm tra HTTP: chặn route, cookie, Server Action |
+| `npm run test:ui` | app đang chạy + trình duyệt | Kiểm tra giao diện bằng trình duyệt thật: bố cục, trạng thái active của điều hướng, thao tác bấm, lỗi console |
 | `npm run validate:ci` | — | File workflow có hợp lệ và có chạy đúng script không |
 
 Mỗi bộ in ra số kiểm tra ở cuối lần chạy. **Đừng chép số đó vào tài liệu này** — bảng trên
