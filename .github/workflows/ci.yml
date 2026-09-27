@@ -23,24 +23,35 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  # Placeholder values so a build can run without secrets.
-  #
-  # The publishable key is public by design; it identifies the project and grants no data
-  # access, because RLS is enabled on every table with no policy for `anon`. These are only
-  # ever used to render and type-check the app, never to read data.
-  NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
-  # Non-empty dummies: the server secret getters validate presence when called, and the
-  # build never calls them because it serves no user request.
-  SUPABASE_JWT_SECRET: ci-placeholder-not-a-real-secret
-  SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-not-a-real-secret
-
 jobs:
   quality:
     name: Lint, typecheck and build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    # Placeholder values so a build can run without secrets.
+    #
+    # Scoped to this job, not the workflow, and that scoping is load-bearing. Next.js
+    # prefers a variable that is already in the process environment over the same key in
+    # `.env.local`, so a workflow-level `SUPABASE_JWT_SECRET` here would follow the
+    # integration job around and quietly win over the value that job wrote into
+    # `.env.local`. It did: the app verified session cookies with
+    # "ci-placeholder-not-a-real-secret" while the suites minted them with the local
+    # stack's secret, so every authenticated request was rejected and the suites reported
+    # a wall of `307 -> /login` that said nothing about the cause.
+    #
+    # `NEXT_PUBLIC_*` is worse than that, because it is inlined into the bundle at build
+    # time: a placeholder there means the built app talks to example.supabase.co forever.
+    env:
+      # The publishable key is public by design; it identifies the project and grants no
+      # data access, because RLS is enabled on every table with no policy for `anon`. These
+      # are only ever used to render and type-check the app, never to read data.
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+      # Non-empty dummies: the server secret getters validate presence when called, and the
+      # build never calls them because it serves no user request.
+      SUPABASE_JWT_SECRET: ci-placeholder-not-a-real-secret
+      SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-not-a-real-secret
 
     steps:
       - name: Checkout
@@ -181,6 +192,13 @@ jobs:
       # the local publishable key: a JWT rather than an `sb_publishable_...` string, which
       # `lib/env.ts` accepts - it checks that the value is present, not what it looks like.
       #
+      # Written twice on purpose: `.env.local` is what the suites read, and `$GITHUB_ENV` is
+      # what the Next.js server the suites start will see. Next prefers a variable already
+      # in the process environment over the same key in `.env.local`, so exporting only the
+      # file would leave the app and the suites able to disagree about the JWT secret - and
+      # the symptom of that is every session cookie being rejected, with nothing in the log
+      # pointing at the cause.
+      #
       # The local database has no TLS at all, which is why every suite asks
       # `scripts/lib/database-ssl.mjs` rather than hardcoding `ssl: {...}`.
       - name: Write .env.local for the local stack
@@ -195,7 +213,13 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
           DATABASE_URL=${DB_URL}
           EOF
-          echo "Wrote .env.local for the local stack at ${API_URL}."
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=${API_URL}"
+            echo "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${ANON_KEY}"
+            echo "SUPABASE_JWT_SECRET=${JWT_SECRET}"
+            echo "SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}"
+          } >> "$GITHUB_ENV"
+          echo "Wrote .env.local and the job environment for the local stack at ${API_URL}."
 
       # Proves the migrations apply from scratch, which is what a new deployment relies on.
       # `npm run test:all` below runs migrations again; that is harmless because the runner
