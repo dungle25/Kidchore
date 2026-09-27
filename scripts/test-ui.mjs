@@ -628,6 +628,19 @@ try {
       "aria-current is not on Tổng quan"
     );
 
+    // The child's balance is the number this screen exists for. It was a 12px pill until
+    // issue #16; measuring the rendered font size is what keeps it from drifting back.
+    const balanceFont = await page
+      .locator("[data-child-balance] p")
+      .first()
+      .evaluate((element) => parseFloat(getComputedStyle(element).fontSize))
+      .catch(() => 0);
+    check(
+      "the child's points balance is rendered large enough to read at a glance",
+      balanceFont >= 24,
+      `font-size=${balanceFont}px (want >= 24)`
+    );
+
     await visit(page, "/parent/chores");
     check(
       "the approval queue groups the submission under the child",

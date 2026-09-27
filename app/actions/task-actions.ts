@@ -2,6 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { callRpc, requireAuth, requireRole } from "@/lib/dal";
 import {
   describeDbError,
@@ -11,15 +12,14 @@ import {
 } from "@/lib/domain";
 import { notifyEvent } from "@/lib/push";
 import { planQuickAdd } from "@/lib/suggested-tasks";
+import { PROOF_BUCKET } from "@/lib/proof-retention";
 import { createAdminClient } from "@/lib/supabase-server";
+import { purgeExpiredProofs } from "./proof-cleanup";
 
 export interface ActionResult {
   ok: boolean;
   error?: string;
 }
-
-/** Bucket holding proof-of-work photos. Created in migration 0006. */
-const PROOF_BUCKET = "proof-images";
 
 /** Must stay in step with the bucket's own limits in migration 0006. */
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
@@ -137,6 +137,11 @@ export async function approveTask(instanceId: string): Promise<ActionResult> {
     revalidatePath("/parent/dashboard");
     revalidatePath("/parent/chores");
     revalidatePath("/kid/dashboard");
+    // Runs after the response, so the parent does not wait for it. A decision is the
+    // moment the family's oldest photos become eligible for removal, which makes it the
+    // natural place to sweep - and it keeps the 1 GB free-plan quota from depending on a
+    // scheduler being set up. See app/actions/proof-cleanup.ts.
+    after(() => purgeExpiredProofs(ctx.db));
     return { ok: true };
   } catch (error) {
     return toResult(error);
@@ -157,6 +162,7 @@ export async function rejectTask(
     revalidatePath("/parent/dashboard");
     revalidatePath("/parent/chores");
     revalidatePath("/kid/dashboard");
+    after(() => purgeExpiredProofs(ctx.db));
     return { ok: true };
   } catch (error) {
     return toResult(error);

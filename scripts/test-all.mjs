@@ -100,6 +100,12 @@ const databaseSuites = [
     script: "scripts/test-child-avatars.mjs",
   },
   {
+    // Deletes objects from Storage, so it needs the real bucket: the whole point is that
+    // an expired photo stops being retrievable, which a row in a table cannot prove.
+    name: "Proof photo retention",
+    script: "scripts/test-proof-retention.mjs",
+  },
+  {
     name: "HTTP end to end",
     script: "scripts/test-e2e.mjs",
     // The suite builds and starts the app itself, then stops it again, so one command

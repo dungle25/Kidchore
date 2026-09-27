@@ -36,6 +36,12 @@ export interface KidTask {
   status: TaskStatus;
   due_date: string;
   proof_image_url: string | null;
+  /**
+   * Set when the photo was removed because it passed its retention window (migration
+   * 0014). `proof_image_url` is kept, so the screen must check this before rendering the
+   * image - a URL is no longer proof that the object still exists.
+   */
+  proof_deleted_at: string | null;
   rejection_reason: string | null;
 }
 

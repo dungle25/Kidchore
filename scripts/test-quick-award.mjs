@@ -582,7 +582,11 @@ try {
   );
   check(
     "the card warns that a penalty can become điểm nợ",
-    cardSource.includes("điểm nợ") && cardSource.includes("Nợ ${Math.abs(balance)} điểm"),
+    // Two places say it: the balance badge switches its unit label to "điểm nợ", and the
+    // pre-tap warning spells out how deep the debt goes. Issue #16 replaced the old
+    // "Nợ N điểm" pill with a large number plus a unit label, so the badge half of this
+    // check reads the label it renders now.
+    cardSource.includes("điểm nợ") && cardSource.includes("Bé đang nợ ${Math.abs(balance)} điểm"),
     ""
   );
   check(

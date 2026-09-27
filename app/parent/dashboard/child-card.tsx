@@ -154,15 +154,35 @@ export default function ChildCard({ child }: { child: ParentChild }) {
 
   return (
     <div className="flex flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <p className="font-semibold text-slate-800">{child.display_name}</p>
-        <span
-          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-            inDebt ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"
+
+        {/* The balance used to be a 12px pill in the corner, which is the number a parent
+            actually opens this screen for. It is now the card's anchor: large, colour-coded,
+            and with the unit underneath so "12" cannot be read as a count of chores.
+            `data-child-balance` is what `scripts/test-ui.mjs` measures, so a later tidy-up
+            cannot quietly shrink it back. */}
+        <div
+          data-child-balance={child.id}
+          className={`-mt-1 shrink-0 rounded-2xl px-3 py-2 text-right ring-1 ${
+            inDebt ? "bg-red-50 ring-red-200" : "bg-green-50 ring-green-200"
           }`}
         >
-          {inDebt ? `Nợ ${Math.abs(balance)} điểm` : `${balance} điểm`}
-        </span>
+          <p
+            className={`text-3xl font-extrabold leading-none tabular-nums ${
+              inDebt ? "text-red-700" : "text-green-700"
+            }`}
+          >
+            {inDebt ? `−${Math.abs(balance)}` : balance}
+          </p>
+          <p
+            className={`mt-1 text-[11px] font-bold uppercase tracking-wide ${
+              inDebt ? "text-red-600" : "text-green-700"
+            }`}
+          >
+            {inDebt ? "điểm nợ" : "điểm"}
+          </p>
+        </div>
       </div>
 
       <p className="mt-2 text-xs text-slate-500">
