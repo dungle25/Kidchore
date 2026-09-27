@@ -7,6 +7,7 @@ import {
   compressImage,
   formatBytes,
 } from "@/lib/image-compression";
+import { PROOF_RETENTION_DAYS, hasLiveProof } from "@/lib/proof-retention";
 import type { KidTask } from "@/lib/domain";
 
 const STATUS_LABEL: Record<KidTask["status"], string> = {
@@ -143,7 +144,9 @@ export default function KidTaskList({ tasks }: { tasks: KidTask[] }) {
   function submit(task: KidTask) {
     const chosen = picked[task.id];
 
-    if (task.require_proof_image && !chosen && !task.proof_image_url) {
+    // An expired photo does not count: the object is gone, so a chore that requires one
+    // needs a new picture rather than a resubmit that would point at nothing.
+    if (task.require_proof_image && !chosen && !hasLiveProof(task)) {
       setFeedback({
         text: `Việc “${task.title}” cần ảnh bằng chứng. Bé chọn ảnh trước nhé.`,
         ok: false,
@@ -293,13 +296,22 @@ export default function KidTaskList({ tasks }: { tasks: KidTask[] }) {
             )}
 
             {/* An already submitted photo stays visible so the child can confirm it. */}
-            {task.proof_image_url && (
+            {hasLiveProof(task) && (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={task.proof_image_url}
+                src={task.proof_image_url ?? undefined}
                 alt={`Ảnh bằng chứng cho ${task.title}`}
                 className="mt-3 max-h-48 rounded-xl border border-slate-200 object-cover"
               />
+            )}
+
+            {/* The photo existed and was removed on purpose. Saying so is the point of
+                keeping proof_deleted_at: without it the card would show a broken image,
+                and the child would think their own photo was lost by accident. */}
+            {task.proof_deleted_at && (
+              <p className="mt-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-500">
+                📷 Ảnh bằng chứng đã được xoá sau {PROOF_RETENTION_DAYS} ngày lưu trữ.
+              </p>
             )}
 
             {task.require_proof_image && !done && (
