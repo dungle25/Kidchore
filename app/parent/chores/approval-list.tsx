@@ -161,12 +161,16 @@ export default function ApprovalList({ items }: { items: PendingApproval[] }) {
               )
             )}
 
+            {/* 44px minimum on the approve button, the reject button and the reason field.
+                Measured in a browser before this: 40px, 38px and 38px - under the minimum,
+                on the one screen a parent uses one-handed with a phone in the other hand.
+                `scripts/test-ui.mjs` now measures all three, so shrinking one fails CI. */}
             <div className="mt-4 flex flex-col gap-2 border-t border-slate-100 pt-3 sm:flex-row sm:items-center">
               <button
                 type="button"
                 onClick={() => handleApprove(item)}
                 disabled={busyId === item.id}
-                className="rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-green-700 disabled:opacity-60"
+                className="min-h-11 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-green-700 disabled:opacity-60"
               >
                 {busyId === item.id ? "Đang xử lý..." : "Duyệt & cộng điểm"}
               </button>
@@ -180,13 +184,13 @@ export default function ApprovalList({ items }: { items: PendingApproval[] }) {
                   }
                   placeholder="Lý do từ chối"
                   aria-label={`Lý do từ chối ${item.task_title}`}
-                  className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none"
+                  className="min-h-11 min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none"
                 />
                 <button
                   type="button"
                   onClick={() => handleReject(item)}
                   disabled={busyId === item.id}
-                  className="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-60"
+                  className="min-h-11 rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:opacity-60"
                 >
                   Từ chối
                 </button>

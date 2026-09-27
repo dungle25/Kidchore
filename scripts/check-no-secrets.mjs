@@ -7,10 +7,16 @@
  * template is therefore one `git add -A` away from a public repository, and nothing about
  * the file's name or contents says so.
  *
- * The scan covers exactly what git tracks, because that is what gets published. When git
- * cannot be asked - the sandbox this repository was written in refuses to let Node capture
- * another program's output - it falls back to walking the tree and says so in its output,
- * so an approximate scan is never mistaken for an exact one.
+ * The scan covers what a `git add -A` would publish right now: every tracked file, plus
+ * every new file that `.gitignore` does not exclude. Both halves matter, and the second one
+ * was learned the hard way - a token was written into a brand-new `docs/` file and this
+ * check reported "No credentials found", because a file that has not been `git add`ed yet is
+ * invisible to `git ls-files`. The minutes between writing a file and staging it are exactly
+ * when a pasted credential is most likely to be sitting in one.
+ *
+ * When git cannot be asked - the sandbox this repository was written in refuses to let Node
+ * capture another program's output - it falls back to walking the tree and says so in its
+ * output, so an approximate scan is never mistaken for an exact one.
  *
  * False positives to expect, and why they do not fire: `.env.example` contains
  * `postgresql://postgres.<project-ref>:<password>@...`, and every pattern below requires a
@@ -43,12 +49,30 @@ const PATTERNS = [
 /** Never published, so a credential here is not a finding. */
 const SKIP_DIRS = new Set([".git", "node_modules", ".next", ".stitch", "design-screenshots", ".worktrees"]);
 
-function trackedFiles() {
+/**
+ * Every file a `git add -A` would publish right now.
+ *
+ * Two lists rather than one. `git ls-files` is what is committed; `--others
+ * --exclude-standard` is what is new and not ignored. The second list is the point of the
+ * change that added it: a credential pasted into a file that does not exist in git yet is
+ * still one command away from being published.
+ *
+ * Both calls throw together if git cannot be run here, which is what sends the caller to
+ * the filesystem fallback.
+ */
+function filesGitWouldPublish() {
+  const list = (args) =>
+    execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+      .split("\n")
+      .filter(Boolean);
+
   try {
-    const out = execFileSync("git", ["ls-files"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-    return { files: out.split("\n").filter(Boolean), exact: true };
+    const tracked = list(["ls-files"]);
+    const untracked = list(["ls-files", "--others", "--exclude-standard"]);
+    // A path cannot be in both lists, but the Set keeps that from mattering if it ever is.
+    return { files: [...new Set([...tracked, ...untracked])], untracked: untracked.length, exact: true };
   } catch {
-    return { files: null, exact: false };
+    return { files: null, untracked: 0, exact: false };
   }
 }
 
@@ -119,7 +143,7 @@ function walk(dir, found = []) {
   return found;
 }
 
-const { files: gitFiles, exact } = trackedFiles();
+const { files: gitFiles, untracked, exact } = filesGitWouldPublish();
 const rules = exact ? [] : ignoreRules();
 const files = gitFiles ?? walk(".").filter((file) => !isIgnored(file, rules));
 
@@ -129,6 +153,10 @@ if (!exact) {
     "  note: git could not be queried here, so this is a filesystem scan that skips\n" +
       "        anything .gitignore excludes. On CI the scan is exact."
   );
+} else if (untracked > 0) {
+  // Said out loud so the scope of the scan is never a guess: these files are not committed
+  // yet, and they are still in scope because one `git add -A` puts them in a commit.
+  console.log(`  including ${untracked} new file(s) that are not committed yet`);
 }
 console.log(`  ${files.length} file(s), ${PATTERNS.length} pattern(s)\n`);
 
@@ -167,7 +195,8 @@ for (const finding of findings) {
   console.error(`  ${finding.file}:${finding.line}  ${finding.name}  ${finding.preview}`);
 }
 console.error(
-  "\nA credential in a tracked file is published the moment it is pushed. Move it to\n" +
-    "`.env.local` (gitignored) and rotate it - removing the line does not undo the push."
+  "\nA credential in a file git would publish is one commit away from a public repository.\n" +
+    "Move it to `.env.local` (gitignored) and rotate it - deleting the line does not undo a\n" +
+    "push that already happened."
 );
 process.exit(1);
